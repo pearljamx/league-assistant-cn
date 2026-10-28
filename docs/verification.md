@@ -27,7 +27,9 @@
 
 生产界面构建、开发程序与打包后程序桌面冒烟通过：国服连接、173 英雄和 878 装备目录、推荐界面、九项符文预览、118 行海克斯榜、拒绝越界设置，无页面异常；未执行真实客户端写操作。
 
-完整 Windows 安装版 Setup.exe、便携版 Portable.exe 与 SHA256SUMS 已生成。没有代码签名证书。安装/卸载完整流程尚未自动执行，当前通过的是打包后程序启动与功能冒烟。
+完整 Windows 安装版 Setup.exe、便携版 Portable.exe 与 SHA256SUMS 已生成，另用 Windows Get-FileHash 复核一致。没有代码签名证书。
+
+`scripts/smoke-installer.ps1` 已通过完整安装/卸载：安装到项目内 artifacts/installer-smoke，安装后的 OCR 健康检查成功；卸载后程序已移除、注册信息清理，原用户 settings.json 的 SHA-256 保持不变。脚本检测到已有正式安装或同名快捷方式时拒绝测试，不覆盖原版本。
 
 `npm run test:portable` 已通过实际便携启动器验证，连接 TENCENT、OCR 子进程与显示器列表成功。测试临时使用本机调试端口连接子进程；正常运行不会开放该端口。
 

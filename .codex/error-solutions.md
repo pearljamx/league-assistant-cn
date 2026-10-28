@@ -37,3 +37,9 @@
 
 - 公开旧版本样本含当前 AramHex 名称目录未收录的“心灵净化”；正式词典下正确拒绝完整三卡结果。
 - 仅在离线 QA 的 --allow-reference-names 参数下补充旧名称验证字体，绝不向生产数据加入伪造 ID 或胜率。
+
+## 安装器测试的名称与用户目录不能猜测
+
+- electron-builder 的卸载程序名来自 executableName：Uninstall LeagueAssistantCN.exe；显示名包含中文产品名及版本。
+- Electron 的实际 userData 使用 productName：%APPDATA%\英雄联盟助手，不是 package.name。
+- 修正烟测路径后，完整安装、OCR 健康检查、卸载及真实 settings.json 保留校验通过。

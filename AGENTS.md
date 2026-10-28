@@ -31,6 +31,8 @@
 - `npm run build:win` 构建 Windows 安装版和便携版。
 - OCR 的构建与测试见 README；运行用户无需单独安装 Python。
 - Windows 打包前运行 `npm run ocr:build`；`build:win` 会验证 OCR 健康状态，生成 Setup.exe、Portable.exe 和 SHA256SUMS。
+- 打包验证：`npm run test:portable`；安装/卸载烟测用 `scripts/smoke-installer.ps1`，必须保留已有安装与快捷方式的拒绝覆盖检查。
+- 实际用户目录为 `%APPDATA%\英雄联盟助手\local`，不要按 package.name 猜测。
 - Windows 终端不一定继承系统代理；开发下载通过 scripts/network.mjs 读取已启用的回环代理，不更改全局配置。
 
 记忆入口：.codex/user-preferences.md、.codex/project-notes.md、.codex/error-solutions.md、.codex/todo.md、.codex/custom-instructions-draft.md。

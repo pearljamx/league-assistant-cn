@@ -37,6 +37,9 @@
 - dist 包含完整 Setup.exe、Portable.exe 与 SHA256SUMS，未配置代码签名。
 - 便携启动器通过 npm run test:portable：真实国服连接、OCR 子进程与显示器列表成功。Playwright 的 Electron 启动入口不能直接跟踪 NSIS 启动器，改用临时本机调试端口连接其 Electron 子进程；发布的正常启动不开放调试端口。
 - 自动接受读取确认状态后再次核对开关/账号/阶段/连接；符文应用同时核对已预览的 9 个 ID，数据更新时要求重新预览。
+- scripts/smoke-installer.ps1 已验证完整安装、安装后 OCR、卸载及用户 settings.json 保留；有正式安装或同名快捷方式时拒绝覆盖测试。
+- 实测 userData 为 %APPDATA%\英雄联盟助手，local 下保存设置/缓存；Electron 使用中文 productName，不能根据 package.name 推断路径。
+- 本地 Git main 已初始化并保存实现；尚无远程仓库，源码、测试与项目记忆已提交，构建产物和截图被忽略。
 
 ## 发布状态
 

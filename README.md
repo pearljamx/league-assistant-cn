@@ -53,9 +53,12 @@ npm run verify:live
 npm run verify:statistics
 npm run test:desktop
 npm run test:portable
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-installer.ps1
 ```
 
 `verify:live` 是只读检查，认证不打印；真实自动接受和符文写入要由使用者在客户端场景中主动验收。桌面冒烟测试会启动并关闭助手，只打开符文预览，不点击应用，不修改游戏配置。`test:portable` 在构建后运行，验证便携启动器、连接与 OCR 进程，结束时关闭测试实例。
+
+安装器测试只在没有同名正式安装和快捷方式时执行，使用项目内测试目录，验证后卸载并核对用户配置保持不变。
 
 浏览器布局预览：`npm run dev:web`。该预览明确显示未连接，不伪造账号、战绩或胜率，游戏功能请使用桌面版。
 
@@ -94,7 +97,7 @@ npm run build:win
 
 客户端 token 只在主进程内存中使用，绝不发给统计站点、渲染进程或日志。窗口只暴露白名单操作；普通符文页和游戏程序文件不由助手修改。
 
-用户配置、战绩缓存、符文备份位于 Electron 用户数据目录（Windows 通常为 `%APPDATA%\league-assistant-cn\local`），不上传、不提交仓库。可在关闭助手后删除缓存文件清理本地查询记录；保留 `settings.json` 可保留偏好与专用符文页归属。
+用户配置、战绩缓存、符文备份位于 Electron 用户数据目录（本机实测为 `%APPDATA%\英雄联盟助手\local`），不上传、不提交仓库。可在关闭助手后删除缓存文件清理本地查询记录；保留 `settings.json` 可保留偏好与专用符文页归属。
 
 项目不隶属于腾讯或 Riot Games，不宣称官方授权。2026-10-29 核对的 [Riot 开发者政策](https://developer.riotgames.com/docs/lol#game-policy)明确将展示强化胜率的网站、应用和悬浮窗列为不批准的用途；页面未说明国服例外。数据的开源许可不能代替运营方许可。目前完整版本仅在本地交付，公开发布需先确定国服适用要求或改为基础版。详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
