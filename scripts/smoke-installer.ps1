@@ -15,6 +15,7 @@ $taskSettings = Join-Path $env:APPDATA ($taskPackage.productName + '\local\setti
 $taskBefore = if (Test-Path -LiteralPath $taskSettings) { (Get-FileHash -LiteralPath $taskSettings -Algorithm SHA256).Hash } else { '' }
 $taskInstaller = Join-Path $taskRoot ("dist\LeagueAssistantCN-" + $taskPackage.version + '-x64-Setup.exe')
 $taskOcrVerified = $false
+$taskLicenseCount = 0
 try {
   $taskInstall = Start-Process -FilePath $taskInstaller -ArgumentList @('/S', '/CURRENTUSER', "/D=$taskTarget") -WindowStyle Hidden -Wait -PassThru
   if ($taskInstall.ExitCode -ne 0) { throw "Installer exit code: $($taskInstall.ExitCode)" }
@@ -22,6 +23,16 @@ try {
   $taskHealth = & (Join-Path $taskTarget 'resources\ocr\league-ocr.exe') --healthcheck
   if ($LASTEXITCODE -ne 0 -or $taskHealth -notmatch '"ocr_ready": true') { throw 'Installed OCR health check failed' }
   $taskOcrVerified = $true
+  $taskLicenseRoot = [IO.Path]::GetFullPath((Join-Path $taskTarget 'resources\third-party-licenses'))
+  $taskLicenseIndex = Get-Content -LiteralPath (Join-Path $taskLicenseRoot 'index.json') -Encoding UTF8 | ConvertFrom-Json
+  $taskLicenseRecords = @($taskLicenseIndex.pythonLicense) + @($taskLicenseIndex.packages | ForEach-Object { $_.files }) + @($taskLicenseIndex.nativeLibraries | ForEach-Object { $_.files })
+  foreach ($taskLicenseRecord in $taskLicenseRecords) {
+    $taskLicensePath = [IO.Path]::GetFullPath((Join-Path $taskLicenseRoot $taskLicenseRecord.path))
+    if (-not $taskLicensePath.StartsWith($taskLicenseRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Rejected license manifest path' }
+    if ((Get-FileHash -LiteralPath $taskLicensePath -Algorithm SHA256).Hash -ne $taskLicenseRecord.sha256) { throw 'Installed license checksum differs from manifest' }
+    $taskLicenseCount++
+  }
+  if ($taskLicenseCount -lt 1) { throw 'Installed license collection is empty' }
 } finally {
   # This uninstaller only operates on the new, checked directory above.
   $taskUninstaller = Join-Path $taskTarget ('Uninstall ' + $taskExecutable + '.exe')
@@ -34,4 +45,4 @@ try {
 if (Test-Path -LiteralPath (Join-Path $taskTarget 'LeagueAssistantCN.exe')) { throw 'Test executable remains after uninstall' }
 $taskAfter = if (Test-Path -LiteralPath $taskSettings) { (Get-FileHash -LiteralPath $taskSettings -Algorithm SHA256).Hash } else { '' }
 if ($taskAfter -ne $taskBefore) { throw 'User settings changed during installer test' }
-@{ installer = 'passed'; installedOcr = $taskOcrVerified; uninstalled = $true; userSettingsPreserved = $true } | ConvertTo-Json -Compress
+@{ installer = 'passed'; installedOcr = $taskOcrVerified; installedLicenses = $taskLicenseCount; uninstalled = $true; userSettingsPreserved = $true } | ConvertTo-Json -Compress

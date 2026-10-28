@@ -202,9 +202,12 @@ export class Client extends EventEmitter {
   private disconnect() {
     this.selectionRevision++;
     this.identityRevision++;
-    this.socket?.removeAllListeners();
-    this.socket?.terminate();
+    const socket = this.socket;
     this.socket = null;
+    socket?.removeAllListeners();
+    // Aborting an opening handshake can emit error after listeners are removed.
+    socket?.on("error", () => {});
+    socket?.terminate();
     this.credentials = null;
     this.nextIdentity = 0;
     this.selection = emptySelection();

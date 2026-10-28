@@ -248,7 +248,11 @@ else {
         if (!overlay || overlay.isDestroyed()) return;
         if (
           !storage.getSettings().overlay ||
-          recognition.state.status !== "recognized" ||
+          !(
+            recognition.state.status === "recognized" ||
+            (recognition.state.status === "scanning" &&
+              recognition.state.gameWindow)
+          ) ||
           client.state.phase !== "InProgress" ||
           client.state.mode !== "hex"
         ) {

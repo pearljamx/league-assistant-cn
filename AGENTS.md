@@ -17,6 +17,8 @@
 - 不在真实客户端自动发起排队或测试写操作；自动接受默认关闭；符文只更新助手管理的页面。
 - 统计数据必须标明模式、来源、日期、分层与样本。缺失值为空，不伪造胜率、海斗分或查询成功。
 - 实时换人/账号事件优先于在途轮询；异步读取缓存和网络返回后须再次核对账号与大区，不能用旧缓存掩盖会话变化或详情读取失败。
+- OCR 新帧未完成前不得复用旧三卡；变化事件按请求和上下文核对，旧子进程退出不能影响新进程。Python 测试使用 `npm run ocr:test` 指向项目 3.12 环境。
+- 主窗口手动比较与实时识别分开；跨 preload 只传普通数据，Vue 响应式对象须先复制。`npm run test:renderer` 仅用隔离模拟服务，无真实游戏写入。
 - Hexdata 直连等待正式接入资料；目前只提供其官方查询入口，不用其他来源的分数替代。
 - AramHex 数据 CC BY-NC 4.0，代码 MIT，许可分开；不将 Hexdata 分数直接映射到 AramHex 分组。
 - 2026-10-29 已通过国服 HN1 的本人查询、两页各 20 场及单局 10 人详情；此前出现过 503/500，回退和错误处理仍须保留。
@@ -31,7 +33,7 @@
 - `npm run typecheck` 类型检查；`npm test` 单元与集成测试。
 - `npm run build:win` 构建 Windows 安装版和便携版。
 - OCR 的构建与测试见 README；运行用户无需单独安装 Python。
-- Windows 打包前运行 `npm run ocr:build`；`build:win` 会验证 OCR 健康状态，生成 Setup.exe、Portable.exe 和 SHA256SUMS。
+- Windows 打包前运行 `npm run ocr:build`；`build:win` 会验证 OCR 健康状态、收集软件许可，生成 Setup.exe、Portable.exe 和 SHA256SUMS。
 - 打包验证：`npm run test:portable`；安装/卸载烟测用 `scripts/smoke-installer.ps1`，必须保留已有安装与快捷方式的拒绝覆盖检查。
 - 实际用户目录为 `%APPDATA%\英雄联盟助手\local`，不要按 package.name 猜测。
 - Windows 终端不一定继承系统代理；开发下载通过 scripts/network.mjs 读取已启用的回环代理，不更改全局配置。

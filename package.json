@@ -24,12 +24,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "npm run typecheck && electron-vite build",
-    "build:win": "node scripts/require-ocr.mjs && npm run build && node scripts/build-windows.mjs && node scripts/checksums.mjs",
+    "build:win": "node scripts/require-ocr.mjs && npm run licenses:collect && npm run build && node scripts/build-windows.mjs && node scripts/checksums.mjs",
+    "licenses:collect": ".venv-ocr\\Scripts\\python.exe scripts/collect-licenses.py",
     "verify:live": "tsx scripts/verify-live.ts",
     "verify:statistics": "tsx scripts/verify-statistics.ts",
     "test:desktop": "node scripts/smoke-electron.mjs",
+    "test:renderer": "node scripts/smoke-renderer.mjs",
     "test:portable": "node scripts/smoke-portable.mjs",
-    "ocr:test": "python -m unittest discover -s worker/tests -v",
+    "ocr:test": ".venv-ocr\\Scripts\\python.exe -m unittest discover -s worker/tests -v",
     "ocr:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-ocr.ps1"
   },
   "dependencies": {

@@ -20,9 +20,23 @@
 
 - Pending
 
-## Applied updates
+## Pending update - 2026-10-29 - Desktop bridge
 
-暂无。
+### Reason
+
+类型检查和模拟函数测试没有发现 Vue 响应式对象无法跨 Electron 桥接的问题，隔离桌面界面场景才复现。
+
+### Suggested instruction
+
+桌面应用跨进程传递界面数据时，先转换为可复制的普通数据；需要验证写操作参数时优先使用隔离服务，避免测试直接修改用户的真实应用配置。
+
+### Scope
+
+- 全局适用
+
+### Status
+
+- Pending
 
 ## Pending update - 2026-10-29 - Async state
 
@@ -41,3 +55,7 @@
 ### Status
 
 - Pending
+
+## Applied updates
+
+暂无；以上仅项目内草案，未修改全局设置。

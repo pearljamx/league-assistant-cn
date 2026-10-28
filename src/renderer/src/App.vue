@@ -130,7 +130,9 @@ const displays = ref([
   { id: 0, name: "自动跟随游戏窗口", width: 0, height: 0 },
 ]);
 const manualIds = ref([0, 0, 0]),
-  manualOpen = ref(false);
+  manualOpen = ref(false),
+  manualComparison = ref<number[] | null>(null);
+let manualEpoch = 0;
 const recentPlayers = ref<
   Record<
     string,
@@ -239,10 +241,14 @@ const visibleAugments = computed(() =>
   ),
 );
 const recognizedCards = computed(() =>
-  (state.value.championId &&
-  ranking.value?.championId !== state.value.championId
-    ? []
-    : recognition.value.augmentIds
+  (!isOverlay && manualComparison.value
+    ? ranking.value?.championId === selectedId.value
+      ? manualComparison.value
+      : []
+    : state.value.championId &&
+        ranking.value?.championId !== state.value.championId
+      ? []
+      : recognition.value.augmentIds
   )
     .map(
       (id) =>
@@ -460,12 +466,9 @@ async function applyRunes() {
   if (!preview) return;
   const result = await run("runes", () =>
     unwrap(
-      api.applyRunes(
-        preview.championId,
-        preview.query,
-        preview.index,
-        preview.option.perks,
-      ),
+      api.applyRunes(preview.championId, { ...preview.query }, preview.index, [
+        ...preview.option.perks,
+      ]),
     ),
   );
   if (result) {
@@ -474,18 +477,28 @@ async function applyRunes() {
   }
 }
 async function scan() {
+  clearManualComparison();
   const value = await run("scan", () => unwrap(api.scanAugments()));
   if (value) recognition.value = value;
 }
 async function manual() {
+  if (!selectedId.value) {
+    notify("请先选择要比较的英雄");
+    return;
+  }
+  const epoch = manualEpoch;
   const value = await run("manual", () =>
-    unwrap(api.setManualAugments(manualIds.value)),
+    unwrap(api.setManualAugments([...manualIds.value])),
   );
-  if (value) {
-    recognition.value = value;
+  if (value && epoch === manualEpoch) {
+    manualComparison.value = [...value.augmentIds];
     manualOpen.value = false;
     globalRank.value = false;
   }
+}
+function clearManualComparison() {
+  manualComparison.value = null;
+  manualEpoch++;
 }
 async function refreshSelection() {
   if (state.value.phase !== "ChampSelect") {
@@ -555,7 +568,9 @@ async function refreshCatalog() {
 }
 watch(
   query,
-  () => {
+  (next, previous) => {
+    if (JSON.stringify(next) === JSON.stringify(previous)) return;
+    clearManualComparison();
     void loadOverview();
     if (page.value === "champion") void loadRecommendation();
     if (page.value === "hex" || isOverlay) void loadRanking();
@@ -563,6 +578,7 @@ watch(
   { deep: true },
 );
 watch(selectedId, () => {
+  clearManualComparison();
   if (page.value === "champion") void loadRecommendation();
   if (page.value === "hex" || isOverlay) void loadRanking();
 });
@@ -591,6 +607,13 @@ watch(page, (value) => {
 function acceptState(value: ConnectionState) {
   const accountChanged = state.value.summoner?.puuid !== value.summoner?.puuid;
   const phaseChanged = state.value.phase !== value.phase;
+  if (
+    accountChanged ||
+    phaseChanged ||
+    state.value.mode !== value.mode ||
+    state.value.championId !== value.championId
+  )
+    clearManualComparison();
   state.value = value;
   if (
     page.value === "selection" &&
@@ -686,7 +709,13 @@ onUnmounted(() => {
         <b>{{ percent(card.winRate) }}</b>
       </div>
     </div>
-    <p v-else class="muted">{{ errors.ranking || "正在读取当前英雄统计…" }}</p>
+    <p v-else class="muted">
+      {{
+        recognition.status === "scanning"
+          ? recognition.message
+          : errors.ranking || "正在读取当前英雄统计…"
+      }}
+    </p>
     <div class="overlay-footer">
       国服样本 · {{ ranking?.source.date?.slice(0, 10) || "日期未提供"
       }}<span>F6 重新识别</span>
@@ -1639,8 +1668,14 @@ onUnmounted(() => {
                 {{ errors.manual }}
               </p>
             </div>
+            <div v-if="manualComparison" class="recognition-status">
+              <Check :size="16" /><span>手动比较 · 保留本次选择</span>
+              <button class="text-button" @click="clearManualComparison">
+                显示识别结果
+              </button>
+            </div>
             <div
-              v-if="
+              v-else-if="
                 recognition.status !== 'idle' || recognition.augmentIds.length
               "
               class="recognition-status"

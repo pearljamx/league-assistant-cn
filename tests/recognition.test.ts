@@ -36,15 +36,23 @@ afterEach(() => {
 
 it("完整名称目录允许比较当前英雄没有统计的强化", async () => {
   const { service } = setup();
-  await service.manual([1, 2, 4]);
-  expect(service.state.augmentIds).toEqual([1, 2, 4]);
+  const manual = await service.manual([1, 2, 4]);
+  expect(manual.augmentIds).toEqual([1, 2, 4]);
+  expect(service.state.augmentIds).toEqual([]);
   await expect(service.manual([1, 1, 2])).rejects.toThrow();
   await expect(service.manual([1, 2, 999])).rejects.toThrow();
 });
 it("分组变化立即清除旧三选一结果", async () => {
   const { service, settings } = setup();
   service.start();
-  await service.manual([1, 2, 3]);
+  vi.spyOn(service as any, "request").mockResolvedValue({
+    requestId: 1,
+    result: {
+      status: "recognized",
+      cards: [1, 2, 3].map((id) => ({ id, text: String(id) })),
+    },
+  });
+  await service.scan();
   settings.band = "mid";
   service.settingsChanged();
   expect(service.state.status).toBe("idle");
@@ -74,18 +82,44 @@ it("断开后迟到的识别结果不能恢复旧卡片", async () => {
   expect(service.state.status).toBe("idle");
   service.stop();
 });
-it("手动识别后即使未开自动扫描，也检查弹窗消失并清空结果", async () => {
+it("F6 识别后即使未开自动扫描，也检查弹窗消失并清空结果", async () => {
   vi.useFakeTimers();
   const { service } = setup();
   service.start();
-  vi.spyOn(service as any, "request").mockResolvedValue({
-    requestId: 1,
-    result: { status: "idle", message: "等待弹窗", cards: [] },
-  });
-  await service.manual([1, 2, 3]);
+  vi.spyOn(service as any, "request")
+    .mockResolvedValueOnce({
+      requestId: 1,
+      result: {
+        status: "recognized",
+        cards: [1, 2, 3].map((id) => ({ id, text: String(id) })),
+      },
+    })
+    .mockResolvedValue({
+      requestId: 1,
+      result: { status: "idle", message: "等待弹窗", cards: [] },
+    });
+  await service.scan();
   await vi.advanceTimersByTimeAsync(950);
   expect(service.state.augmentIds).toEqual([]);
   expect(service.state.status).toBe("idle");
+  service.stop();
+});
+it("手动比较不能替换已识别画面或打断自动识别", async () => {
+  const { service } = setup();
+  vi.spyOn(service as any, "request").mockResolvedValue({
+    requestId: 1,
+    result: {
+      status: "recognized",
+      cards: [1, 2, 3].map((id) => ({ id, text: String(id) })),
+    },
+  });
+  await service.scan();
+  const updates = vi.fn();
+  service.on("recognition", updates);
+  const manual = await service.manual([4, 2, 3]);
+  expect(manual.augmentIds).toEqual([4, 2, 3]);
+  expect(service.state.augmentIds).toEqual([1, 2, 3]);
+  expect(updates).not.toHaveBeenCalled();
   service.stop();
 });
 it("英雄变化后迟到的手动请求不能发布结果", async () => {
@@ -103,6 +137,31 @@ it("英雄变化后迟到的手动请求不能发布结果", async () => {
   client.emit("state");
   complete([1, 2, 3].map((id) => ({ id, name: String(id), rarity: "gold" })));
   await expect(pending).rejects.toThrow("英雄或统计分组已变化");
+  expect(service.state.augmentIds).toEqual([]);
+  service.stop();
+});
+it("手动重试恢复成功后取消旧退避，继续检查弹窗是否消失", async () => {
+  vi.useFakeTimers();
+  const { service } = setup();
+  service.start();
+  vi.spyOn(service as any, "request")
+    .mockRejectedValueOnce(new Error("interrupted"))
+    .mockResolvedValueOnce({
+      requestId: 2,
+      result: {
+        status: "recognized",
+        cards: [1, 2, 3].map((id) => ({ id, text: `强化${id}` })),
+      },
+    })
+    .mockResolvedValueOnce({
+      requestId: 3,
+      result: { status: "idle", cards: [] },
+    });
+  await service.scan();
+  await service.scan();
+  expect(service.state.status).toBe("recognized");
+  await vi.advanceTimersByTimeAsync(950);
+  expect(service.state.status).toBe("idle");
   expect(service.state.augmentIds).toEqual([]);
   service.stop();
 });

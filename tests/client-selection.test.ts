@@ -31,6 +31,16 @@ function setup() {
   });
   return client;
 }
+it("连接中的事件流中止发出 error 时，助手仍能安全断开", () => {
+  const client = setup();
+  (client as any).credentials = { pid: 1, port: 50001, token: "test-only" };
+  (client as any).connectSocket();
+  const socket = (client as any).socket;
+  socket.terminate = () =>
+    socket.emit("error", new Error("opening handshake aborted"));
+  expect(() => client.stop()).not.toThrow();
+  expect(client.state.summoner).toBeNull();
+});
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (error: Error) => void;
   const promise = new Promise<T>((done, fail) => {

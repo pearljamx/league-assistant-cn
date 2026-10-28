@@ -2,3 +2,5 @@
 *.ps1 text eol=crlf
 *.png binary
 *.ico binary
+# Preserve upstream license texts, including their original whitespace.
+resources/license-sources/** -text -whitespace

@@ -17,6 +17,7 @@ export const idleRecognition = (): Recognition => ({
   captureId: 0,
   monitor: 0,
   updatedAt: new Date().toISOString(),
+  gameWindow: undefined,
 });
 export class RecognitionService extends EventEmitter {
   state = idleRecognition();
@@ -28,6 +29,8 @@ export class RecognitionService extends EventEmitter {
       resolve: (value: any) => void;
       reject: (error: unknown) => void;
       timer: ReturnType<typeof setTimeout>;
+      epoch: number;
+      command: string;
     }
   >();
   private sequence = 0;
@@ -64,6 +67,7 @@ export class RecognitionService extends EventEmitter {
   }
   stop() {
     this.stopped = true;
+    this.epoch++;
     if (this.timer) clearInterval(this.timer);
     this.child?.kill();
     this.child = null;
@@ -139,18 +143,27 @@ export class RecognitionService extends EventEmitter {
     );
     this.child = child;
     createInterface({ input: child.stdout }).on("line", (line) => {
+      if (this.child !== child) return;
       try {
         const message = JSON.parse(line);
+        const pending = this.pending.get(message.requestId);
         if (message.event === "changed") {
+          if (
+            !pending ||
+            pending.command !== "scan" ||
+            pending.epoch !== this.epoch ||
+            !this.active()
+          )
+            return;
           this.publish({
             status: "scanning",
             message: "选项变化，正在重新识别",
             augmentIds: [],
             rawTexts: [],
+            gameWindow: message.gameWindow,
           });
           return;
         }
-        const pending = this.pending.get(message.requestId);
         if (pending) {
           clearTimeout(pending.timer);
           this.pending.delete(message.requestId);
@@ -162,7 +175,8 @@ export class RecognitionService extends EventEmitter {
     });
     child.stderr.on("data", () => {});
     child.on("error", () => {
-      if (this.child === child) this.child = null;
+      if (this.child !== child) return;
+      this.child = null;
       this.rejectPending();
       this.publish({
         status: "error",
@@ -172,23 +186,34 @@ export class RecognitionService extends EventEmitter {
       this.retryAt = Date.now() + 30000;
     });
     child.on("exit", () => {
-      if (this.child === child) this.child = null;
+      if (this.child !== child) return;
+      this.child = null;
       this.rejectPending();
       if (!this.stopped) this.retryAt = Date.now() + 30000;
     });
   }
   private request(command: string, body: any = {}): Promise<any> {
     this.launch();
+    const child = this.child!;
     const requestId = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
         reject(new AppError("识别超时，请重新尝试。", "OCR_TIMEOUT"));
-        this.child?.kill();
-        this.child = null;
+        if (this.child === child) {
+          this.child = null;
+          this.rejectPending();
+          child.kill();
+        }
       }, 18000);
-      this.pending.set(requestId, { resolve, reject, timer });
-      this.child!.stdin.write(
+      this.pending.set(requestId, {
+        resolve,
+        reject,
+        timer,
+        epoch: this.epoch,
+        command,
+      });
+      child.stdin.write(
         JSON.stringify({ command, requestId, ...body }) + "\n",
         (error) => {
           if (error) {
@@ -237,6 +262,7 @@ export class RecognitionService extends EventEmitter {
         !["recognized", "uncertain", "idle", "error"].includes(result.status)
       )
         throw new AppError("识别组件返回格式无效。", "OCR_PROTOCOL");
+      this.retryAt = 0;
       this.publish({
         status: result.status,
         message: result.message,
@@ -270,7 +296,7 @@ export class RecognitionService extends EventEmitter {
       this.busy = false;
     }
   }
-  async manual(ids: number[]) {
+  async manual(ids: number[]): Promise<Recognition> {
     if (new Set(ids).size !== 3 || ids.length !== 3)
       throw new AppError("请选择三个不同的强化。", "INVALID_AUGMENTS");
     const epoch = this.epoch;
@@ -285,14 +311,12 @@ export class RecognitionService extends EventEmitter {
         "选项中存在当前数据未收录的强化。",
         "INVALID_AUGMENTS",
       );
-    this.epoch++;
-    this.publish({
+    // Manual lookup is a renderer comparison, not an observed game frame.
+    return {
+      ...idleRecognition(),
       status: "recognized",
-      message: "手动确认的三个强化",
-      augmentIds: ids,
-      rawTexts: [],
-      captureId: ++this.sequence,
-    });
-    return this.state;
+      message: "手动比较的三个强化",
+      augmentIds: [...ids],
+    };
   }
 }

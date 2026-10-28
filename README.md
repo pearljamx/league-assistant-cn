@@ -51,6 +51,7 @@ Electron 45 需要显式安装运行库，本项目的 `postinstall` 会执行�
 npm run typecheck
 npm test
 npm run build
+npm run test:renderer
 npm run verify:live
 npm run verify:statistics
 npm run test:desktop
@@ -59,6 +60,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-installer.ps1
 ```
 
 `verify:live` 是只读检查，认证不打印；真实自动接受和符文写入要由使用者在客户端场景中主动验收。桌面冒烟测试会启动并关闭助手，只打开符文预览，不点击应用，不修改游戏配置。`test:portable` 在构建后运行，验证便携启动器、连接与 OCR 进程，结束时关闭测试实例。
+
+`test:renderer` 使用独立账户目录和明确标记的模拟数据，验证手动比较保持、识别切换、过期响应及符文参数传递；它不加载真实客户端服务，不进行游戏写入。
 
 安装器测试只在没有同名正式安装和快捷方式时执行，使用项目内测试目录，验证后卸载并核对用户配置保持不变。
 
@@ -71,7 +74,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-installer.ps1
 ```powershell
 py -3.12 -m venv .venv-ocr
 .\.venv-ocr\Scripts\python.exe -m pip install -r worker\requirements.txt
-.\.venv-ocr\Scripts\python.exe -m unittest discover -s worker\tests -v
+npm run ocr:test
 .\.venv-ocr\Scripts\python.exe worker\recognizer.py --selftest
 npm run ocr:build
 npm run build:win
@@ -83,7 +86,9 @@ npm run build:win
 .\.venv-ocr\Scripts\python.exe -m pip install --timeout 120 --index-url https://pypi.tuna.tsinghua.edu.cn/simple -r worker\requirements.txt
 ```
 
-`build:win` 输出安装版、便携版和 `dist/SHA256SUMS`。发布完整包前必须先成功执行 `ocr:build` 并验收 OCR 可执行文件。安装版只安装到当前用户，保留用户配置与缓存。
+`build:win` 输出安装版、便携版和 `dist/SHA256SUMS`。发布完整包前必须先成功执行 `ocr:build` 并验收 OCR 可执行文件。构建自动运行 `licenses:collect`，将 Python、锁定依赖和随包本机库的许可文本及 SHA-256 索引放入程序的 `resources/third-party-licenses/`。安装版只安装到当前用户，保留用户配置与缓存。
+
+OCR 只在截取区域像素完全一致时复用结果；新画面或识别失败会先清空旧三卡，重新识别期间显示提示。窗口移动时重新计算悬浮位置。主窗口的手动比较独立保留，点击“显示识别结果”可返回当前识别；换英雄或分组后清除旧比较。悬浮窗始终跟随实时识别。上述状态切换已通过隔离界面验证，当前实战验收状态见验收记录。
 
 ## 数据口径
 

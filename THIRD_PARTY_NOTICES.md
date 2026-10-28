@@ -18,9 +18,13 @@
 - ONNX Runtime：MIT；<https://github.com/microsoft/onnxruntime>。
 - OpenCV：Apache-2.0；<https://opencv.org/license/>。
 - NumPy：BSD-3-Clause；Pillow：HPND；MSS：MIT。
+- Python 运行库：PSF；FlatBuffers：Apache-2.0。OpenCV、NumPy 和 ONNX Runtime 附带的其他组件说明保留原文。
+- Shapely：BSD-3-Clause，其 GEOS 库另受 LGPL 约束；libffi：MIT；bzip2、XZ/liblzma 采用其随附许可；OpenSSL 3.x：Apache-2.0。具体文本与来源以构建生成的清单为准。
 - PyInstaller：GPL-2.0-or-later，包含允许分发打包程序的 bootloader exception；<https://pyinstaller.org/en/stable/license.html>。
 
 实际安装版本见 package-lock.json、worker/requirements.txt、worker/requirements-lock.txt；原始依赖的许可文件保留在相应软件包中。
+
+Windows 构建还会把 Python 解释器、锁定 OCR 依赖和可识别本机库随附的完整许可文本放入安装目录 `resources/third-party-licenses/`，`index.json` 记录版本、路径及 SHA-256。缺少许可文件的 RapidOCR/FlatBuffers wheel 使用仓库内保存的对应上游版本原文；该清单不构成游戏运营方或数据提供方的授权。
 
 ## 参考项目
 
