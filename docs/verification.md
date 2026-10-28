@@ -25,7 +25,6 @@
 - 真实对局的自动接受、专用符文页写入、换人和备选席同步：没有主动排队或改动用户客户端，等待用户操作场景验证。
 - 真实海克斯弹窗、刷新卡片、跨屏和缩放：目前只有逻辑测试和合成样本基准，等待实际画面验收。
 - Hexdata 数值分：没有正式接入资料与许可，仅提供其官方查分页。
-- GitHub 发布：登录有效；2026-10-29 用户确认已取得国服适用许可，授权继续公开发布完整版本。发布进度单独记录，不把发布成功当成实战验收通过。
 
 ## 打包与界面
 
@@ -48,7 +47,7 @@
 
 `npm run test:portable` 已通过实际便携启动器验证，连接 TENCENT、OCR 子进程与显示器列表成功。测试临时使用本机调试端口连接子进程；正常运行不会开放该端口。
 
-发布前已重新构建，安装包内 THIRD_PARTY_NOTICES 与源码逐字节一致，安装/卸载复验通过，68 份许可摘要及原用户配置保持不变。源码历史检查未发现常见凭证格式或被忽略的缓存/截图路径。GitHub Windows 检查见[运行记录](https://github.com/pearljamx/league-assistant-cn/actions/runs/40789468031)；其构建输入对应 329e119，后续发布记录不改动运行代码或打包输入。
+发布前已重新构建，安装包内 THIRD_PARTY_NOTICES 与源码逐字节一致，安装/卸载复验通过，68 份许可摘要及原用户配置保持不变。源码历史检查未发现常见凭证格式或被忽略的缓存/截图路径。GitHub Windows 检查[运行 40789468031](https://github.com/pearljamx/league-assistant-cn/actions/runs/40789468031)全流程通过：依赖安装、类型检查、Vitest、Python 测试、OCR 构建、Windows 双包和隔离界面。其构建输入对应 329e119，后续发布记录不改动运行代码或打包输入。
 
 ## 公开旧截图的补充验证
 
@@ -64,6 +63,14 @@
 ## 发布政策核对
 
 2026-10-29 用户明确确认已取得国服适用许可，选择继续公开发布完整版本，据此解除此前发布范围待定项。许可原文未入库，未宣称经独立核验。[Riot 通用政策](https://developer.riotgames.com/docs/lol#game-policy)、数据非商业许可与 Hexdata 接入仍各自处理，不能互相替代。
+
+## GitHub 交付 - 2026-10-29
+
+- [公开仓库](https://github.com/pearljamx/league-assistant-cn)与 [v0.1.0 完整功能预发布](https://github.com/pearljamx/league-assistant-cn/releases/tag/v0.1.0)已上线；Release ID 427313781，draft=false、prerelease=true。
+- 标签指向 d6e94b6，运行代码及打包输入与通过 Windows CI 的 329e119 一致；后续 main 提交仅同步发布记录，不移动已发布标签。
+- 两个 EXE 和 SHA256SUMS 三个附件的 GitHub 服务端 SHA-256 与本地逐项一致；已匿名下载校验文件，内容一致，两个公开程序下载链接的 HTTP HEAD 均返回 200。未把此项描述为完整下载两个 EXE 后复测。
+- GitHub 公开源码 ZIP 的 96 个文件核对通过；两个 PowerShell 文件按 .gitattributes 声明转为 CRLF，其余内容一致，未包含 artifacts、缓存或截图。
+- 发布说明保留真实自动接受、符文写入、换人、当前海克斯多屏/缩放与 Hexdata 数值分的未验收/未接入状态。
 
 ## 手动验收步骤
 

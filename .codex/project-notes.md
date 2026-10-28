@@ -58,4 +58,8 @@
 
 GitHub 登录有效，先前网络错误来自终端未使用系统代理。2026-10-29 用户回答已取得国服适用许可，明确授权继续发布完整版本；该确认覆盖此前发布范围问题，不再次询问。许可文件未提供，不宣称独立核验、官方背书或 Hexdata 已接入。
 
-公开仓库 https://github.com/pearljamx/league-assistant-cn 已创建，main 已推送。完整 Windows 包基于 329e119 的构建输入重新生成，后续仅更新发布记录；CI 运行 40789468031。安装/卸载复验通过，安装后的 OCR 与 68 份许可验证成功、用户配置保持。附件校验与正式发布结果以随后的远程 API 记录为准。
+公开仓库 https://github.com/pearljamx/league-assistant-cn 已创建，main 已推送。完整 Windows 包基于 329e119 的构建输入重新生成，后续仅更新发布记录；CI 运行 40789468031。安装/卸载复验通过，安装后的 OCR 与 68 份许可验证成功、用户配置保持。
+
+GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python 安装、类型/单元测试、OCR/Windows 双包构建和隔离界面场景。后续只改发布记录的提交使用 `[skip ci]`，不重复构建相同运行代码。
+
+完整功能预发布已公开：https://github.com/pearljamx/league-assistant-cn/releases/tag/v0.1.0，Release ID 427313781，prerelease=true、draft=false，标签 d6e94b6。3 个附件服务端摘要与本地一致，匿名下载 SHA256SUMS 内容一致，两个 EXE 的公开 HEAD 为 200；未完整下载两个 EXE 重跑。源码 ZIP 96 文件与标签一致，仅 2 个 PS1 按声明 CRLF 转换。实际凭据/截图/缓存未上传。正式海斗分接入与实战验收保持待办，不能把公开发布当作整个方案验收完成。

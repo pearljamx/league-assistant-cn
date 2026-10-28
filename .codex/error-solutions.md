@@ -69,3 +69,9 @@
 - 收集许可时 bzip2 DLL 摘要不匹配：PyInstaller 从 PATH 取到了同名库。
 - 在 Conda 环境下显式添加基环境 Library/bin 的 ffi.dll、libbz2.dll、liblzma.dll；收集阶段核对冻结 DLL 与生产者文件摘要，缺许可或版本不符就停止打包。
 - 重建 OCR 后收集通过：Python 3.12.4、26 个锁定包、4 组本机库、68 份文本；构建自动附带索引，不下载许可证，不把数据许可视为运营方许可。
+
+## 草稿 Release 的标签接口 404 / 源码 ZIP 换行差异
+
+- 草稿已存在且 gh release view 可见时，REST releases/tags/v0.1.0 仍可能返回 404；不能据此误判凭证无效。按授权用户的 releases 列表筛选 tag_name 或使用 Release ID 核对草稿。
+- GitHub 源码 ZIP 会遵守 .gitattributes 的 *.ps1 eol=crlf，不能把与 Git blob 的换行差异当成代码不一致。仅对明确声明的 PS1 归一化比较，其他文件保持逐字节比较。
+- v0.1.0 校验通过：3 个附件服务端 SHA-256、公开校验文件、96 个源码文件；已公开，非草稿。
