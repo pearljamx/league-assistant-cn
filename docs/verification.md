@@ -42,11 +42,13 @@
 本次构建校验值（Windows Get-FileHash 独立复核）：
 
 ```text
-89b505ede41e923ec5c6fc64c89231cdbea86a14303200dea20e9a13da5949a9  LeagueAssistantCN-0.1.0-x64-Portable.exe
-53c3285e1455790fd8ba21416becdf35d425cd4d338f8ce947201fcb7fa01759  LeagueAssistantCN-0.1.0-x64-Setup.exe
+6636709b9015d9f3103d44957c03cf88bcab32a28d8974dc9a61157b0295c7b3  LeagueAssistantCN-0.1.0-x64-Portable.exe
+5194c5daaa142e439b77ee69e02f90c51a79277160ae883087c9e8eebb9eca95  LeagueAssistantCN-0.1.0-x64-Setup.exe
 ```
 
 `npm run test:portable` 已通过实际便携启动器验证，连接 TENCENT、OCR 子进程与显示器列表成功。测试临时使用本机调试端口连接子进程；正常运行不会开放该端口。
+
+发布前已重新构建，安装包内 THIRD_PARTY_NOTICES 与源码逐字节一致，安装/卸载复验通过，68 份许可摘要及原用户配置保持不变。源码历史检查未发现常见凭证格式或被忽略的缓存/截图路径。GitHub Windows 检查见[运行记录](https://github.com/pearljamx/league-assistant-cn/actions/runs/40789468031)；其构建输入对应 329e119，后续发布记录不改动运行代码或打包输入。
 
 ## 公开旧截图的补充验证
 
