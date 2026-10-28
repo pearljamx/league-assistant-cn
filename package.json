@@ -1,0 +1,58 @@
+{
+  "name": "league-assistant-cn",
+  "productName": "英雄联盟助手",
+  "version": "0.1.0",
+  "description": "面向国服的独立英雄联盟桌面助手",
+  "author": "League Assistant CN contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pearljamx/league-assistant-cn.git"
+  },
+  "homepage": "https://github.com/pearljamx/league-assistant-cn",
+  "type": "module",
+  "main": "out/main/index.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install-electron.mjs",
+    "format": "prettier --write src tests scripts *.json *.ts *.yml",
+    "dev": "electron-vite dev",
+    "dev:web": "vite --config vite.web.config.ts --host 127.0.0.1",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "npm run typecheck && electron-vite build",
+    "build:win": "node scripts/require-ocr.mjs && npm run build && node scripts/build-windows.mjs && node scripts/checksums.mjs",
+    "verify:live": "tsx scripts/verify-live.ts",
+    "verify:statistics": "tsx scripts/verify-statistics.ts",
+    "test:desktop": "node scripts/smoke-electron.mjs",
+    "test:portable": "node scripts/smoke-portable.mjs",
+    "ocr:test": "python -m unittest discover -s worker/tests -v",
+    "ocr:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-ocr.ps1"
+  },
+  "dependencies": {
+    "@lucide/vue": "1.63.0",
+    "koffi": "3.3.5",
+    "vue": "3.5.44",
+    "ws": "8.22.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "22.20.5",
+    "@types/ws": "8.18.2",
+    "@vitejs/plugin-vue": "6.0.10",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0",
+    "electron-vite": "4.0.1",
+    "prettier": "3.6.2",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "undici": "7.30.1",
+    "vite": "7.3.7",
+    "vitest": "4.1.12",
+    "vue-tsc": "3.3.13"
+  }
+}

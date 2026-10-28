@@ -1,0 +1,271 @@
+export type Mode = "rift" | "aram" | "hex";
+export type Position =
+  | "ALL"
+  | "TOP"
+  | "JUNGLE"
+  | "MIDDLE"
+  | "BOTTOM"
+  | "SUPPORT";
+export type Band = "all" | "casual" | "mid" | "high";
+export type Phase =
+  | "None"
+  | "Lobby"
+  | "Matchmaking"
+  | "ReadyCheck"
+  | "ChampSelect"
+  | "GameStart"
+  | "InProgress"
+  | "WaitingForStats"
+  | "EndOfGame"
+  | "Reconnect"
+  | string;
+export interface Champion {
+  id: number;
+  name: string;
+  title: string;
+  alias: string;
+  icon: string;
+}
+export interface Summoner {
+  puuid: string;
+  summonerId: number;
+  gameName: string;
+  tagLine: string;
+  level: number;
+  iconId: number;
+}
+export interface RankedEntry {
+  queue: string;
+  tier: string;
+  division: string;
+  wins: number;
+  losses: number;
+  lp: number;
+}
+export interface ConnectionState {
+  status: "searching" | "connected" | "disconnected" | "error";
+  message: string;
+  phase: Phase;
+  region: string | null;
+  platform: string | null;
+  mode: Mode;
+  queueId: number | null;
+  summoner: Summoner | null;
+  ranked: RankedEntry[];
+  championId: number | null;
+  updatedAt: string;
+}
+export interface SourceInfo {
+  id: "tencent" | "aramhex";
+  name: string;
+  url: string;
+  mode: Mode;
+  patch: string | null;
+  date: string | null;
+  band: Band | null;
+  license: string | null;
+  stale?: boolean;
+  position?: Position;
+}
+export interface Rates {
+  winRate: number | null;
+  pickRate: number | null;
+  games: number | null;
+}
+export interface HeroStat extends Rates {
+  championId: number;
+  rank: number | null;
+  position?: Position;
+}
+export interface Overview {
+  source: SourceInfo;
+  heroes: HeroStat[];
+  bands: { id: Band; name: string }[];
+}
+export interface ItemOption extends Rates {
+  ids: number[];
+}
+export interface RuneOption extends Rates {
+  perks: number[];
+  primaryStyleId: number;
+  subStyleId: number;
+  label: string;
+}
+export interface SkillOption extends Rates {
+  order: number[];
+  priority: number[];
+}
+export interface Recommendation {
+  source: SourceInfo;
+  championId: number;
+  position: Position;
+  starting: ItemOption[];
+  boots: ItemOption[];
+  core: ItemOption[];
+  later: ItemOption[];
+  runes: RuneOption[];
+  skills: SkillOption[];
+  unavailable: string[];
+}
+export interface Augment {
+  id: number;
+  name: string;
+  rarity: string;
+  description?: string;
+  icon?: string;
+}
+export interface AugmentStat extends Rates {
+  augment: Augment;
+  wins: number;
+  smoothedWinRate: number;
+  delta: number;
+  lowSample: boolean;
+}
+export interface AugmentRanking {
+  source: SourceInfo;
+  championId: number | null;
+  baseline: number;
+  augments: AugmentStat[];
+  catalog: Augment[];
+  exposure: string;
+}
+export interface TeamMember {
+  cellId: number;
+  puuid: string | null;
+  summonerId: number | null;
+  name: string | null;
+  championId: number;
+  position: string;
+}
+export interface Selection {
+  members: TeamMember[];
+  bench: number[];
+  localCellId: number | null;
+  championId: number | null;
+}
+export interface MatchPlayer {
+  puuid: string;
+  name: string;
+  championId: number;
+  teamId: number;
+  win: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  items: number[];
+  damage: number;
+  gold: number;
+  cs: number;
+}
+export interface Match {
+  id: string;
+  queueId: number;
+  mode: string;
+  date: string;
+  duration: number;
+  players: MatchPlayer[];
+  private: boolean;
+  remake: boolean;
+}
+export interface MatchPage {
+  matches: Match[];
+  nextIndex: number;
+  hasMore: boolean;
+  source: "sgp" | "lcu" | "cache";
+  warning: string | null;
+  fetchedAt: string;
+}
+export interface Catalog {
+  champions: Champion[];
+  items: Record<string, { name: string; icon: string }>;
+  perks: Record<string, { name: string; icon: string }>;
+  version: string | null;
+}
+export interface Settings {
+  autoAccept: boolean;
+  acceptDelayMs: number;
+  band: Band;
+  mode: Mode;
+  position: Position;
+  tier: number;
+  autoRecognize: boolean;
+  monitor: number;
+  overlay: boolean;
+  managedRunePage: { id: number; puuid: string } | null;
+}
+export interface SkillRating {
+  provider: "hexdata";
+  status: "needs-authorization";
+  score: null;
+  percentile: null;
+  date: null;
+  message: string;
+  url: string;
+}
+export interface Recognition {
+  gameWindow?: { x: number; y: number; width: number; height: number };
+  status:
+    | "unavailable"
+    | "idle"
+    | "scanning"
+    | "recognized"
+    | "uncertain"
+    | "error";
+  message: string;
+  augmentIds: number[];
+  rawTexts: string[];
+  captureId: number;
+  monitor: number;
+  updatedAt: string;
+}
+export interface Result<T> {
+  ok: boolean;
+  data?: T;
+  error?: string;
+  code?: string;
+}
+export interface StatsQuery {
+  mode: Mode;
+  band: Band;
+  tier: number;
+  position: Position;
+}
+export interface AssistantApi {
+  getState(): Promise<Result<ConnectionState>>;
+  getSettings(): Promise<Result<Settings>>;
+  saveSettings(patch: Partial<Settings>): Promise<Result<Settings>>;
+  getCatalog(): Promise<Result<Catalog>>;
+  getSelection(): Promise<Result<Selection>>;
+  getOverview(query: StatsQuery): Promise<Result<Overview>>;
+  getRecommendation(
+    championId: number,
+    query: StatsQuery,
+  ): Promise<Result<Recommendation>>;
+  getAugments(
+    championId: number | null,
+    band: Band,
+  ): Promise<Result<AugmentRanking>>;
+  getHistory(puuid: string, start: number): Promise<Result<MatchPage>>;
+  getMatch(id: string): Promise<Result<Match>>;
+  findSummoner(riotId: string): Promise<Result<Summoner>>;
+  getRanked(puuid: string): Promise<Result<RankedEntry[]>>;
+  applyRunes(
+    championId: number,
+    query: StatsQuery,
+    index: number,
+    expectedPerks: number[],
+  ): Promise<Result<{ pageId: number }>>;
+  getRating(): Promise<Result<SkillRating>>;
+  openExternal(
+    target: "hexdata" | "github" | "data-license",
+  ): Promise<Result<void>>;
+  getRecognition(): Promise<Result<Recognition>>;
+  scanAugments(): Promise<Result<Recognition>>;
+  setManualAugments(ids: number[]): Promise<Result<Recognition>>;
+  getDisplays(): Promise<
+    Result<{ id: number; name: string; width: number; height: number }[]>
+  >;
+  onState(callback: (state: ConnectionState) => void): () => void;
+  onSettings(callback: (settings: Settings) => void): () => void;
+  onRecognition(callback: (state: Recognition) => void): () => void;
+}

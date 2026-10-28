@@ -1,0 +1,43 @@
+# Project Notes
+
+## Project type
+
+国服英雄联盟桌面助手；Electron、Vue 3、TypeScript、electron-vite；npm。
+
+## Entry files
+
+主进程 src/main/index.ts；预加载 src/preload/index.ts；界面 src/renderer/src/App.vue。
+
+## Run / build / test
+
+在 E:\英雄联盟助手 运行 npm ci、npm run dev、npm run typecheck、npm test、npm run build:win。
+
+## Decisions
+
+- 各模式基础版优先，后续海克斯统计及 OCR。
+- 腾讯 101 作为国服统计来源，AramHex 为海克斯分层数据来源。
+- Hexdata 海斗分直连依赖正式接入资料；本地状态不可假装成功。
+- 用户配置、缓存和认证不要提交 GitHub。
+
+## 入口与模块
+
+- src/main/client.ts / discovery.ts：国服发现、WAMP 事件、轮询、选人及自动接受。
+- src/main/providers：腾讯 101、AramHex 校验快照、SGP/LCU 战绩、Hexdata 待授权入口。
+- src/main/recognition.ts + worker/recognizer.py：JSON-lines 本地子进程，前台游戏窗口截图，F6 / 自动识别。
+- src/main/runes.ts：只写助手管理的符文页，满槽拒绝覆盖。
+- scripts/network.mjs：开发用系统回环代理适配；生产公开网络使用 Electron net.fetch。
+
+## Verification - 2026-10-29
+
+- npm ci 成功，审计 0 漏洞；npm test 38 项，Python 匹配 5 项；类型检查与生产构建通过。
+- 国服 HN1 大厅、当前段位、本人 Riot ID、战绩两页各 20 场且无重复、单局 10 人详情通过只读实测。
+- 腾讯目录 173 英雄、878 装备、5 符文树；峡谷与海克斯出装/加点通过；AramHex 四组、173 英雄及英雄 202 的 118 个强化组合通过。
+- 开发和打包后程序桌面冒烟通过：连接、推荐、九项符文预览、118 行强化排行、拒绝越界设置，无页面异常。
+- OCR 完整组件健康检查与 1080p/1440p/4K 合成样本通过；公开旧版本截图仅验证文字识别，详情见 docs/verification.md。
+- dist 包含完整 Setup.exe、Portable.exe 与 SHA256SUMS，未配置代码签名。
+- 便携启动器通过 npm run test:portable：真实国服连接、OCR 子进程与显示器列表成功。Playwright 的 Electron 启动入口不能直接跟踪 NSIS 启动器，改用临时本机调试端口连接其 Electron 子进程；发布的正常启动不开放调试端口。
+- 自动接受读取确认状态后再次核对开关/账号/阶段/连接；符文应用同时核对已预览的 9 个 ID，数据更新时要求重新预览。
+
+## 发布状态
+
+GitHub 登录有效，先前网络错误来自终端未使用系统代理。尚未创建远程仓库或 Release。当前 Riot 政策禁止强化胜率展示，国服例外未确认，已询问用户决定本地保留 / 公开基础版 / 持许可完整发布。不要擅自将待发布写成已发布。

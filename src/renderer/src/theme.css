@@ -1,0 +1,32 @@
+:root {
+  color-scheme: dark;
+  --bg: #0d1418;
+  --sidebar: #10191c;
+  --panel: #141e22;
+  --text: #dce2e1;
+  --secondary: #a9b6b9;
+  --muted: #7f9298;
+  --line: #c1d0ce12;
+  --line-strong: #c1d0ce20;
+  --gold: #cfb47b;
+  --gold-light: #dfc898;
+  --green: #91c9b3;
+}
+::selection {
+  background: #b59b5a55;
+  color: #f0efdc;
+}
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #4c60674d;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #5c7077aa;
+}

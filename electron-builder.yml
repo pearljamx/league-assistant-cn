@@ -1,0 +1,33 @@
+appId: cn.leagueassistant.desktop
+productName: 英雄联盟助手
+directories:
+  output: dist
+files:
+  - out/**/*
+  - package.json
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
+  - resources/icon.png
+asarUnpack:
+  - node_modules/koffi/**/*
+  - node_modules/@koromix/**/*
+extraResources:
+  - from: worker/dist/league-ocr
+    to: ocr
+    filter:
+      - "**/*"
+win:
+  icon: resources/icon.ico
+  executableName: LeagueAssistantCN
+  target:
+    - nsis
+    - portable
+nsis:
+  artifactName: LeagueAssistantCN-${version}-${arch}-Setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  deleteAppDataOnUninstall: false
+portable:
+  artifactName: LeagueAssistantCN-${version}-${arch}-Portable.${ext}
