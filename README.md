@@ -15,6 +15,8 @@
 
 完整验收状态见 [docs/verification.md](docs/verification.md)。有实现并不等于已经在真实对局中通过验收。
 
+逐项需求、证据和未完成条件见 [验收对照表](docs/acceptance-matrix.md)。
+
 ## 直接使用
 
 本地 `dist/` 已生成安装版（Setup.exe）与便携版（Portable.exe）。完整包自带 OCR，不需要安装 Node.js 或 Python。公开发布范围尚待决定，目前没有可用的 GitHub Release；请勿把预定仓库地址当作已发布下载。

@@ -23,3 +23,21 @@
 ## Applied updates
 
 暂无。
+
+## Pending update - 2026-10-29 - Async state
+
+### Reason
+
+离开页面、换账号或实时事件更新后，旧的网络请求和异步缓存读取仍可能完成，并覆盖新状态。
+
+### Suggested instruction
+
+异步操作依赖账号、页面、阶段或用户选择时，在返回后再次核对上下文；实时事件优先于较早的轮询结果。测试应覆盖响应乱序和切换后的缓存回退。
+
+### Scope
+
+- 全局适用
+
+### Status
+
+- Pending

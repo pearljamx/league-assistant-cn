@@ -120,6 +120,8 @@ export class Client extends EventEmitter {
   private stopped = false;
   private nextIdentity = 0;
   private readyEpoch = 0;
+  private selectionRevision = 0;
+  private identityRevision = 0;
   private accept: AutoAccept;
   constructor(private storage: Storage) {
     super();
@@ -163,6 +165,7 @@ export class Client extends EventEmitter {
   async start() {
     this.stopped = false;
     await this.tick();
+    if (this.stopped) return;
     this.timer = setInterval(() => void this.tick(), 2500);
   }
   stop() {
@@ -197,6 +200,8 @@ export class Client extends EventEmitter {
     });
   }
   private disconnect() {
+    this.selectionRevision++;
+    this.identityRevision++;
     this.socket?.removeAllListeners();
     this.socket?.terminate();
     this.socket = null;
@@ -237,6 +242,12 @@ export class Client extends EventEmitter {
           void this.refreshSelection();
         }
         if (event?.uri === "/lol-champ-select/v1/session") {
+          this.selectionRevision++;
+          if (
+            event.eventType !== "Delete" &&
+            this.state.phase !== "ChampSelect"
+          )
+            return;
           this.selection =
             event.eventType === "Delete"
               ? emptySelection()
@@ -250,14 +261,26 @@ export class Client extends EventEmitter {
             this.state.championId = this.selection.championId;
           this.publish();
         }
-        if (
-          event?.uri === "/lol-summoner/v1/current-summoner" &&
-          event.eventType !== "Delete"
-        ) {
+        if (event?.uri === "/lol-summoner/v1/current-summoner") {
+          this.identityRevision++;
+          if (event.eventType === "Delete") {
+            this.selectionRevision++;
+            this.selection = emptySelection();
+            this.state.summoner = null;
+            this.state.platform = null;
+            this.state.ranked = [];
+            this.state.championId = null;
+            this.nextIdentity = 0;
+            this.accept.cancel();
+            this.emit("account-changed");
+            this.publish();
+            return;
+          }
           if (
             this.state.summoner &&
             this.state.summoner.puuid !== event.data?.puuid
           ) {
+            this.selectionRevision++;
             this.state.championId = null;
             this.selection = emptySelection();
             this.state.ranked = [];
@@ -279,6 +302,7 @@ export class Client extends EventEmitter {
   }
   private setPhase(phase: Phase) {
     if (phase !== this.state.phase) {
+      this.selectionRevision++;
       if (phase === "ReadyCheck") this.readyEpoch++;
       if (phase !== "ChampSelect") this.selection = emptySelection();
       if (
@@ -305,14 +329,25 @@ export class Client extends EventEmitter {
   }
   async refreshSelection() {
     if (this.state.phase !== "ChampSelect") return;
+    const revision = ++this.selectionRevision;
+    const owner = this.state.summoner?.puuid;
+    const credentials = this.credentials;
+    const current = () =>
+      revision === this.selectionRevision &&
+      this.state.phase === "ChampSelect" &&
+      this.state.status === "connected" &&
+      this.state.summoner?.puuid === owner &&
+      this.credentials === credentials;
     try {
-      this.selection = parseSelection(
+      const selection = parseSelection(
         await this.request("/lol-champ-select/v1/session"),
       );
+      if (!current()) return;
+      this.selection = selection;
       this.state.championId = this.selection.championId;
       this.publish();
     } catch {
-      this.selection = emptySelection();
+      if (current()) this.selection = emptySelection();
     }
   }
   private async tick() {
@@ -343,16 +378,26 @@ export class Client extends EventEmitter {
       this.setPhase(phase);
       this.connectSocket();
       if (Date.now() >= this.nextIdentity) {
-        const [region, summoner, ranked] = await Promise.all([
+        const revision = this.identityRevision;
+        const credentials = this.credentials;
+        const [region, summoner, ranked, entitlements] = await Promise.all([
           this.request("/riotclient/region-locale"),
           this.request("/lol-summoner/v1/current-summoner"),
           this.request("/lol-ranked/v1/current-ranked-stats").catch(() => ({})),
+          this.request("/entitlements/v1/token").catch(() => null),
         ]);
+        if (
+          this.stopped ||
+          revision !== this.identityRevision ||
+          credentials !== this.credentials
+        )
+          return;
         const normalized = normalizeSummoner(summoner);
         if (
           this.state.summoner &&
           this.state.summoner.puuid !== normalized.puuid
         ) {
+          this.selectionRevision++;
           this.selection = emptySelection();
           this.state.championId = null;
           this.accept.cancel();
@@ -366,15 +411,10 @@ export class Client extends EventEmitter {
         this.state.region = region.region;
         this.state.summoner = normalized;
         this.state.ranked = rankedEntries(ranked);
-        try {
-          const entitlements = await this.request("/entitlements/v1/token");
-          this.state.platform =
-            String(entitlements.issuer ?? "")
-              .match(/https?:\/\/([a-z0-9]+)-/i)?.[1]
-              ?.toUpperCase() ?? null;
-        } catch {
-          this.state.platform = null;
-        }
+        this.state.platform =
+          String(entitlements?.issuer ?? "")
+            .match(/https?:\/\/([a-z0-9]+)-/i)?.[1]
+            ?.toUpperCase() ?? null;
         this.nextIdentity = Date.now() + 20000;
       }
       try {

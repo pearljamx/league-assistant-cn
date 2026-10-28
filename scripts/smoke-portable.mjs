@@ -36,17 +36,29 @@ try {
     .find((page) => !page.url().includes("#overlay"));
   assert(page, "Portable main window missing");
   await page.locator(".main-workspace").waitFor();
-  const status = await page.evaluate(async () => {
-    const result = await window.assistant.getState();
-    const displays = await window.assistant.getDisplays();
-    return {
-      ok: result.ok,
-      status: result.data?.status,
-      region: result.data?.region,
-      ocrReady: displays.ok,
-      displayCount: displays.data?.length,
-    };
-  });
+  let connection;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    connection = await page.evaluate(() => window.assistant.getState());
+    if (
+      connection.data &&
+      (connection.data.region ||
+        ["disconnected", "error"].includes(connection.data.status))
+    )
+      break;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  assert(
+    connection?.data && connection.data.status !== "searching",
+    "Connection never left initial state",
+  );
+  const displays = await page.evaluate(() => window.assistant.getDisplays());
+  const status = {
+    ok: connection.ok,
+    status: connection.data.status,
+    region: connection.data.region,
+    ocrReady: displays.ok,
+    displayCount: displays.data?.length,
+  };
   assert(status.ok);
   assert(status.ocrReady);
   console.log(JSON.stringify({ portableLaunch: "passed", ...status }));

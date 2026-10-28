@@ -50,6 +50,73 @@ const client = (request: any) =>
     request,
   }) as unknown as Client;
 describe("战绩与分页", () => {
+  it("单局详情期间切换账号，不得回退到旧账号的部分缓存", async () => {
+    const cached = storage();
+    vi.mocked(cached.cache).mockResolvedValue({
+      at: 1,
+      data: normalizeMatch(raw),
+    });
+    const source = client(
+      vi.fn(async () => {
+        source.state.summoner = { ...source.state.summoner!, puuid: "b" };
+        return raw;
+      }),
+    );
+    await expect(
+      new HistoryProvider(source, cached).match("1"),
+    ).rejects.toMatchObject({ code: "ACCOUNT_CHANGED" });
+    expect(cached.put).not.toHaveBeenCalled();
+  });
+  it("单局详情读取失败应向界面报告，不能把不完整缓存当成功", async () => {
+    const cached = storage();
+    vi.mocked(cached.cache).mockResolvedValue({
+      at: 1,
+      data: normalizeMatch(raw),
+    });
+    const source = client(
+      vi.fn(async () => {
+        throw new AppError("busy", "HTTP_503", 503);
+      }),
+    );
+    await expect(
+      new HistoryProvider(source, cached).match("1"),
+    ).rejects.toMatchObject({ status: 503 });
+  });
+  it("缓存异步读取期间切换账号，也不得返回旧账号完整详情", async () => {
+    const cached = storage(),
+      source = client(vi.fn());
+    vi.mocked(cached.cache).mockImplementationOnce(async () => {
+      source.state.summoner = { ...source.state.summoner!, puuid: "b" };
+      const match = normalizeMatch(raw)!;
+      return {
+        at: Date.now(),
+        data: { ...match, players: Array(10).fill(match.players[0]) },
+      };
+    });
+    await expect(
+      new HistoryProvider(source, cached).match("1"),
+    ).rejects.toMatchObject({ code: "ACCOUNT_CHANGED" });
+  });
+  it("大区变化时不得返回前一个大区的战绩缓存", async () => {
+    const cached = storage(),
+      source = client(vi.fn());
+    vi.mocked(cached.cache).mockImplementationOnce(async () => {
+      source.state.platform = "HN10";
+      return {
+        at: Date.now(),
+        data: {
+          matches: [],
+          nextIndex: 0,
+          hasMore: false,
+          source: "sgp",
+          fetchedAt: "",
+        },
+      };
+    });
+    await expect(
+      new HistoryProvider(source, cached).history("a", 0),
+    ).rejects.toMatchObject({ code: "ACCOUNT_CHANGED" });
+  });
   it("LCU 和 SGP 的同一场游戏归一到相同记录", () => {
     const one = normalizeMatch(raw)!;
     const two = normalizeMatch({

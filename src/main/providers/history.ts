@@ -84,6 +84,17 @@ export class HistoryProvider {
     private client: Client,
     private storage: Storage,
   ) {}
+  private assertSession(owner: string, platform: string | null) {
+    if (
+      this.client.state.status !== "connected" ||
+      this.client.state.summoner?.puuid !== owner ||
+      this.client.state.platform !== platform
+    )
+      throw new AppError(
+        "账号、大区或连接已变化，请重新查询。",
+        "ACCOUNT_CHANGED",
+      );
+  }
   async history(puuid: string, start: number): Promise<MatchPage> {
     const owner = this.client.state.summoner?.puuid;
     const platform = this.client.state.platform;
@@ -91,6 +102,7 @@ export class HistoryProvider {
       throw new AppError("请先连接并登录客户端。", "CLIENT_OFFLINE");
     const key = `history-v2:${platform}:${owner}:${puuid}:${start}`;
     const cached = await this.storage.cache<MatchPage>(key);
+    this.assertSession(owner, platform);
     if (cached && Date.now() - cached.at < 60000)
       return {
         ...cached.data,
@@ -102,8 +114,7 @@ export class HistoryProvider {
     const request = this.fetch(puuid, start, owner)
       .then(async (page) => {
         // A late reply from an old account must not enter the current session's cache.
-        if (this.client.state.summoner?.puuid !== owner)
-          throw new AppError("账号已切换，请重新查询。", "ACCOUNT_CHANGED");
+        this.assertSession(owner, platform);
         await this.storage.put(key, page);
         await Promise.all(
           page.matches.map((match) =>
@@ -113,10 +124,12 @@ export class HistoryProvider {
             ),
           ),
         );
+        this.assertSession(owner, platform);
         return page;
       })
       .catch((error) => {
-        if (cached && this.client.state.summoner?.puuid === owner)
+        this.assertSession(owner, platform);
+        if (cached)
           return {
             ...cached.data,
             source: "cache" as const,
@@ -221,27 +234,25 @@ export class HistoryProvider {
   }
   async match(id: string): Promise<Match> {
     const owner = this.client.state.summoner?.puuid;
-    if (!owner) throw new AppError("请先登录客户端。", "CLIENT_OFFLINE");
-    const key = `match-v2:${this.client.state.platform}:${owner}:${id}`;
+    const platform = this.client.state.platform;
+    if (!owner || this.client.state.status !== "connected")
+      throw new AppError("请先登录客户端。", "CLIENT_OFFLINE");
+    const key = `match-v2:${platform}:${owner}:${id}`;
     const cached = await this.storage.cache<Match>(key);
+    this.assertSession(owner, platform);
     if (cached?.data.players.length === 10) return cached.data;
-    try {
-      const match = normalizeMatch(
-        await this.client.request(`/lol-match-history/v1/games/${id}`),
-      );
-      if (!match) throw new AppError("单局详情尚未生成。", "NO_DATA");
-      if (
-        match.private &&
-        !match.players.some((player) => player.puuid === owner)
-      )
-        throw new AppError("该自定义对局不属于当前账号。", "PRIVATE_MATCH");
-      if (this.client.state.summoner?.puuid !== owner)
-        throw new AppError("账号已切换，请重新查询。", "ACCOUNT_CHANGED");
-      await this.storage.put(key, match);
-      return match;
-    } catch (error) {
-      if (cached) return cached.data;
-      throw error;
-    }
+    const match = normalizeMatch(
+      await this.client.request(`/lol-match-history/v1/games/${id}`),
+    );
+    this.assertSession(owner, platform);
+    if (!match) throw new AppError("单局详情尚未生成。", "NO_DATA");
+    if (
+      match.private &&
+      !match.players.some((player) => player.puuid === owner)
+    )
+      throw new AppError("该自定义对局不属于当前账号。", "PRIVATE_MATCH");
+    await this.storage.put(key, match);
+    this.assertSession(owner, platform);
+    return match;
   }
 }

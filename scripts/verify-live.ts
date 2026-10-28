@@ -100,6 +100,52 @@ try {
           }),
         );
       }
+      // Query one visible participant from a public match; never infer hidden identities.
+      const peer = page.matches
+        .filter((match) => !match.private)
+        .flatMap((match) => match.players)
+        .find(
+          (player) =>
+            player.puuid &&
+            player.puuid !== client.state.summoner?.puuid &&
+            player.name.includes("#"),
+        );
+      if (peer) {
+        try {
+          const found = await client.findSummoner(peer.name);
+          if (found.puuid !== peer.puuid)
+            throw new Error("同区搜索返回的玩家与公开战绩不一致");
+          const peerPage = await history.history(found.puuid, 0);
+          const detail = peerPage.matches[0]
+            ? await history.match(peerPage.matches[0].id)
+            : null;
+          console.log(
+            JSON.stringify({
+              check: "同区公开玩家查询（只读）",
+              matched: true,
+              source: peerPage.source,
+              games: peerPage.matches.length,
+              privateGames: peerPage.matches.filter((match) => match.private)
+                .length,
+              detailPlayers: detail?.players.length ?? 0,
+            }),
+          );
+        } catch (error) {
+          console.log(
+            JSON.stringify({
+              check: "同区公开玩家查询（只读）",
+              ...safeError(error),
+            }),
+          );
+        }
+      } else
+        console.log(
+          JSON.stringify({
+            check: "同区公开玩家查询（只读）",
+            available: false,
+            reason: "公开战绩未提供可查询的完整 Riot ID",
+          }),
+        );
     } catch (error) {
       console.log(
         JSON.stringify({ check: "本人战绩（只读）", ...safeError(error) }),
