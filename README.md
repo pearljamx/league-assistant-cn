@@ -19,7 +19,7 @@
 
 ## 直接使用
 
-本地 `dist/` 已生成安装版（Setup.exe）与便携版（Portable.exe）。完整包自带 OCR，不需要安装 Node.js 或 Python。公开发布范围尚待决定，目前没有可用的 GitHub Release；请勿把预定仓库地址当作已发布下载。
+从 [GitHub Releases](https://github.com/pearljamx/league-assistant-cn/releases) 下载 Windows x64 安装版（Setup.exe）或便携版（Portable.exe），同时提供 `SHA256SUMS`。完整包自带 OCR，不需要安装 Node.js 或 Python。v0.1.0 为完整功能预览版，真实对局尚待验收的项目见[验收记录](docs/verification.md)。
 
 1. 启动 WeGame，登录英雄联盟。
 2. 启动助手，等待左下角出现“国服客户端已连接”。
@@ -106,7 +106,7 @@ OCR 只在截取区域像素完全一致时复用结果；新画面或识别失�
 
 用户配置、战绩缓存、符文备份位于 Electron 用户数据目录（本机实测为 `%APPDATA%\英雄联盟助手\local`），不上传、不提交仓库。可在关闭助手后删除缓存文件清理本地查询记录；保留 `settings.json` 可保留偏好与专用符文页归属。
 
-项目不隶属于腾讯或 Riot Games，不宣称官方授权。2026-10-29 核对的 [Riot 开发者政策](https://developer.riotgames.com/docs/lol#game-policy)明确将展示强化胜率的网站、应用和悬浮窗列为不批准的用途；页面未说明国服例外。数据的开源许可不能代替运营方许可。目前完整版本仅在本地交付，公开发布需先确定国服适用要求或改为基础版。详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+项目不隶属于腾讯或 Riot Games，不表示获得官方背书。维护者已确认取得国服适用许可，并决定发布完整功能预览版；许可适用范围与持续有效性由维护者管理。[Riot 通用开发者政策](https://developer.riotgames.com/docs/lol#game-policy)对强化胜率展示有限制，数据开源许可不能代替运营方许可。具体第三方声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 英雄联盟助手 is not endorsed by Riot Games and does not reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games and all associated properties are trademarks or registered trademarks of Riot Games, Inc.
 

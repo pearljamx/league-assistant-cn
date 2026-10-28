@@ -1,4 +1,4 @@
-# v0.1.0 本地预览版
+# v0.1.0 完整功能预览版 · Windows x64
 
 国服独立 Windows 助手，包含客户端识别、默认关闭的自动接受、本人及同区战绩、选人信息、国服出装/加点/常规符文预览与专用页应用、分层海克斯统计、本地 OCR 和悬浮窗。
 
@@ -19,10 +19,16 @@
 - 外部 AramHex 数据为 CC BY-NC 4.0，仅非商业使用；原创代码 MIT。
 - 构建未签名，不宣称经过微软或游戏运营方认证。
 
-## 公开发布状态
+## 下载与校验
 
-此文件是本地交付与未来 Release 的草案，不代表已有 GitHub Release。
+下载本 Release 附件中的 `LeagueAssistantCN-0.1.0-x64-Setup.exe` 或 `LeagueAssistantCN-0.1.0-x64-Portable.exe`，无需安装 Node.js / Python。`SHA256SUMS` 用于核对附件原始文件；源码由 GitHub 提供 ZIP / tar.gz。
 
-2026-10-29 核对的 [Riot Game Policy](https://developer.riotgames.com/docs/lol#game-policy)明确不批准展示强化胜率的网站、应用和悬浮窗，尚未确认国服例外。公开范围等待用户决定；不能将开源数据许可当作运营方授权。
+Windows PowerShell 校验示例：
 
-验收细节见 [verification.md](verification.md)，使用和构建见 [README.md](../README.md)。
+```powershell
+Get-FileHash -LiteralPath '.\LeagueAssistantCN-0.1.0-x64-Setup.exe' -Algorithm SHA256
+```
+
+维护者已确认取得国服适用许可后决定发布；本项目仍为独立工具，不表示官方背书。外部数据非商业许可保持不变。
+
+查看[验收细节](https://github.com/pearljamx/league-assistant-cn/blob/v0.1.0/docs/verification.md)、[使用与构建](https://github.com/pearljamx/league-assistant-cn/blob/v0.1.0/README.md)及[第三方声明](https://github.com/pearljamx/league-assistant-cn/blob/v0.1.0/THIRD_PARTY_NOTICES.md)。

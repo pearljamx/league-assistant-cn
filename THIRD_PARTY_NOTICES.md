@@ -30,6 +30,6 @@ Windows 构建还会把 Python 解释器、锁定 OCR 依赖和可识别本机�
 
 设计与协议研究参考 LeagueAkari、sunerpy/winer、czgreat/aramhex、Nyx0ra/lol-aram-mayhem-hextech-helper。各项目的名称和原始源码许可归其作者；本项目不代表这些作者或其产品。
 
-本项目为独立社区工具，与腾讯、Riot Games、Hexdata 没有隶属、赞助或官方授权关系。
+本项目为独立社区工具，与腾讯、Riot Games、Hexdata 没有隶属或赞助关系，不表示获得官方背书。
 
-2026-10-29 核对的 Riot Game Policy 将展示强化胜率列为不批准的用途（适用于网站、应用及悬浮窗）：<https://developer.riotgames.com/docs/lol#game-policy>。尚未确认国服例外，完整本地构建不代表已经获准向玩家公开分发。
+Riot 通用 Game Policy 对强化胜率展示有限制：<https://developer.riotgames.com/docs/lol#game-policy>。2026-10-29 维护者确认已取得国服适用许可，并授权发布完整功能预览版；许可原文未随源码公开，不将该确认描述为独立核验或官方背书。外部数据、软件与模型仍分别遵守各自许可，Hexdata 数值分直连仍待正式接入资料。
