@@ -6,6 +6,7 @@ import {
   shell,
   globalShortcut,
   screen,
+  session,
 } from "electron";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,9 +24,11 @@ import { RecognitionService } from "./recognition";
 import { AppError, safeError } from "./errors";
 import {
   CompanionController,
+  alignToClient,
   companionBounds,
   type CompanionRole,
 } from "./companions";
+import { clientWindowRect } from "./client-window";
 import { setPublicFetcher } from "./http";
 import { createTray } from "./tray";
 import type { Result } from "../shared/types";
@@ -35,7 +38,8 @@ const root = join(current, "../..");
 let mainWindow: BrowserWindow | null = null,
   overlay: BrowserWindow | null = null,
   pickerWindow: BrowserWindow | null = null,
-  infoWindow: BrowserWindow | null = null;
+  infoWindow: BrowserWindow | null = null,
+  hexdataWindow: BrowserWindow | null = null;
 let quitting = false;
 let tray: ReturnType<typeof createTray> | null = null;
 const showMain = () => {
@@ -44,6 +48,70 @@ const showMain = () => {
   mainWindow.show();
   mainWindow.focus();
 };
+/** Hexdata 官方页面只允许在其自有域名内导航；其他链接交给系统浏览器。 */
+const hexdataPage = (raw: string) => {
+  try {
+    const url = new URL(raw);
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "hexdata.com.cn" ||
+        url.hostname.endsWith(".hexdata.com.cn"))
+    );
+  } catch {
+    return false;
+  }
+};
+const openOutside = (raw: string) => {
+  if (/^https:\/\//.test(raw)) void shell.openExternal(raw);
+};
+// 该窗口不在 ownedWindows 中、没有 preload，因此无法调用助手的任何接口。
+function openHexdata(url: string) {
+  if (hexdataWindow && !hexdataWindow.isDestroyed()) {
+    if (hexdataWindow.isMinimized()) hexdataWindow.restore();
+    hexdataWindow.show();
+    hexdataWindow.focus();
+    return;
+  }
+  const partition = "persist:hexdata";
+  session
+    .fromPartition(partition)
+    .setPermissionRequestHandler((_contents, _permission, done) => done(false));
+  hexdataWindow = new BrowserWindow({
+    width: 1100,
+    height: 780,
+    minWidth: 720,
+    minHeight: 520,
+    title: "Hexdata 海斗查分（官方页面，需登录 Hexdata 账号）",
+    icon: join(root, "resources/icon.png"),
+    autoHideMenuBar: true,
+    backgroundColor: "#0d1215",
+    webPreferences: {
+      partition,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+  const contents = hexdataWindow.webContents;
+  contents.setWindowOpenHandler(({ url: next }) => {
+    if (hexdataPage(next)) void contents.loadURL(next);
+    else openOutside(next);
+    return { action: "deny" };
+  });
+  const guard = (event: { preventDefault(): void }, next: string) => {
+    if (hexdataPage(next)) return;
+    event.preventDefault();
+    openOutside(next);
+  };
+  contents.on("will-navigate", guard);
+  contents.on("will-redirect", guard);
+  hexdataWindow.on("page-title-updated", (event) => event.preventDefault());
+  hexdataWindow.on("closed", () => {
+    hexdataWindow = null;
+  });
+  void hexdataWindow.loadURL(url).catch(() => {});
+}
 const ownedWindows = () =>
   [mainWindow, overlay, pickerWindow, infoWindow].filter(
     (window): window is BrowserWindow =>
@@ -64,6 +132,8 @@ else {
       client = new Client(storage);
       const companions = new CompanionController();
       const readyCompanions = new Set<CompanionRole>();
+      const userMoved = new Set<CompanionRole>();
+      let placementRequest = 0;
       let companionSelectionRequest = 0;
       const catalog = new CatalogProvider(storage),
         tencent = new TencentProvider(storage, catalog),
@@ -291,11 +361,13 @@ else {
         github: "https://github.com/pearljamx/league-assistant-cn",
         "data-license": "https://github.com/czgreat/aramhex-data",
       };
-      handle("open", (value) =>
-        shell.openExternal(
-          urls[z.enum(["hexdata", "github", "data-license"]).parse(value)],
-        ),
-      );
+      handle("open", (value) => {
+        const target = z
+          .enum(["hexdata", "github", "data-license"])
+          .parse(value);
+        if (target === "hexdata") openHexdata(urls.hexdata);
+        else return shell.openExternal(urls[target]);
+      });
       handle("recognition", () => recognition.state);
       handle("scan", () => recognition.scan());
       handle("manual", (value) =>
@@ -391,6 +463,8 @@ else {
         });
         if (role === "picker") pickerWindow = window;
         else infoWindow = window;
+        // 用户拖动过的小窗保持其位置，不再自动贴靠客户端。
+        window.on("will-move", () => userMoved.add(role));
         window.on("ready-to-show", () => {
           readyCompanions.add(role);
           updateCompanionWindows();
@@ -461,25 +535,61 @@ else {
         for (const window of ownedWindows())
           window.webContents.send(event, data);
       };
-      function updateCompanionWindows() {
-        const enabled = storage.getSettings().companionWindows !== false;
-        for (const [role, window] of [
-          ["picker", pickerWindow],
-          ["info", infoWindow],
-        ] as const) {
-          if (!window || window.isDestroyed()) continue;
-          if (readyCompanions.has(role) && companions.visible(role, enabled)) {
-            if (!window.isVisible()) window.showInactive();
-          } else window.hide();
+      // 函数声明会提升：小窗 ready-to-show 可能早于这里执行。
+      function companionWindow(role: CompanionRole) {
+        return role === "picker" ? pickerWindow : infoWindow;
+      }
+      /** 贴在客户端窗口旁边；找不到客户端窗口时放在主窗口所在屏幕右上角。 */
+      async function placeCompanions(roles: CompanionRole[]) {
+        const rect = await clientWindowRect();
+        let next;
+        if (rect) {
+          const dip = screen.screenToDipRect(null, rect);
+          next = alignToClient(dip, screen.getDisplayMatching(dip).workArea);
+        } else if (mainWindow && !mainWindow.isDestroyed())
+          next = companionBounds(
+            screen.getDisplayMatching(mainWindow.getBounds()).workArea,
+          );
+        else return;
+        for (const role of roles) {
+          const window = companionWindow(role);
+          if (window && !window.isDestroyed() && !userMoved.has(role))
+            window.setBounds(next[role]);
         }
       }
+      function updateCompanionWindows() {
+        const enabled = storage.getSettings().companionWindows !== false;
+        const appearing: CompanionRole[] = [];
+        for (const role of ["picker", "info"] as const) {
+          const window = companionWindow(role);
+          if (!window || window.isDestroyed()) continue;
+          if (readyCompanions.has(role) && companions.visible(role, enabled)) {
+            if (!window.isVisible()) appearing.push(role);
+          } else window.hide();
+        }
+        if (!appearing.length) return;
+        const request = ++placementRequest;
+        void placeCompanions(appearing)
+          .catch(() => {})
+          .finally(() => {
+            if (request !== placementRequest) return;
+            const allowed = storage.getSettings().companionWindows !== false;
+            for (const role of appearing) {
+              const window = companionWindow(role);
+              if (
+                window &&
+                !window.isDestroyed() &&
+                readyCompanions.has(role) &&
+                companions.visible(role, allowed) &&
+                !window.isVisible()
+              )
+                window.showInactive();
+            }
+          });
+      }
       const repositionCompanions = () => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
-        const next = companionBounds(
-          screen.getDisplayMatching(mainWindow.getBounds()).workArea,
-        );
-        pickerWindow?.setBounds(next.picker);
-        infoWindow?.setBounds(next.info);
+        userMoved.clear();
+        void placeCompanions(["picker", "info"]).catch(() => {});
       };
       screen.on("display-removed", repositionCompanions);
       screen.on("display-metrics-changed", repositionCompanions);
@@ -548,4 +658,5 @@ app.on("before-quit", () => {
   if (overlay && !overlay.isDestroyed()) overlay.destroy();
   if (pickerWindow && !pickerWindow.isDestroyed()) pickerWindow.destroy();
   if (infoWindow && !infoWindow.isDestroyed()) infoWindow.destroy();
+  if (hexdataWindow && !hexdataWindow.isDestroyed()) hexdataWindow.destroy();
 });

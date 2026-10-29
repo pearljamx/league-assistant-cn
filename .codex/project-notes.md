@@ -88,3 +88,7 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 搜索历史仅存本窗口 localStorage（按大区过滤，可清空），失败忽略。
 - 旧 style.css 的 `.app-shell{display:flex}` 会覆盖 shell.css 的 grid，导致主区只有内容宽；全局 CSS 新旧同名选择器需去重。
 - 冒烟脚本主窗选择改为 URL 无 hash（原先只排除 #overlay，会误选 #champion-info）。验证：typecheck、98 单测、renderer 5 / history 6 / companions 8 隔离场景、真实客户端只读桌面冒烟（173 英雄、12 装备行、九项符文预览未应用、118 强化行）。
+- 2026-10-29 用户追加：弹窗太多内容、要参考 Akari、客户端刚打开就要有弹窗。已改为 Mini 小窗（#champion-picker，340×420，None/Lobby/匹配/确认/选人/结束均显示，游戏中/断线隐藏）+ 英雄信息窗（#champion-info，360×600，仅 ChampSelect）。renderer/src/companion/ 下 useCompanion + MiniWindow + HeroInfoWindow；点头像只浏览，“换用”按钮才写入。
+- 小窗贴靠：client-window.ts 用 user32 FindWindowW("RCLIENT")+GetWindowRect 只读取客户端窗口矩形，screenToDipRect 换算；alignToClient 右侧优先、一侧不够时 Mini 右/信息窗左，否则退回右上角；用户 will-move 拖动后不再自动贴靠。实测 2048×1232 DIP 工作区、居中 1280×720 客户端时 Mini 在 x=1672。
+- 主进程 TDZ 教训：ready-to-show 可能在 await loadURL 期间触发，被提前调用的函数里不能引用后面才初始化的 const；真实桌面冒烟会因主进程 Error 对话框卡在 electron.launch 超时。
+- 海斗分：Hexdata 官网仅登录后查询、无公开第三方 API（合作需经其 QQ 群）。“官方查分”改为助手内独立窗口（partition persist:hexdata、无 preload、拒绝权限、仅允许 *.hexdata.com.cn 导航，其他链接交系统浏览器），实测 window.assistant 为 undefined。不读取其 Cookie/页面数据，不生成替代分。

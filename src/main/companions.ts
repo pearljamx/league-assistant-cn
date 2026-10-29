@@ -1,5 +1,6 @@
 import type { CompanionState, ConnectionState } from "../shared/types";
 
+/** picker 为常驻 Mini 小窗，info 为仅在英雄选择阶段出现的英雄信息窗。 */
 export type CompanionRole = "picker" | "info";
 export interface WindowBounds {
   x: number;
@@ -7,6 +8,19 @@ export interface WindowBounds {
   width: number;
   height: number;
 }
+export const companionSizes: Record<
+  CompanionRole,
+  { width: number; height: number }
+> = {
+  picker: { width: 340, height: 420 },
+  info: { width: 360, height: 600 },
+};
+const hiddenPhases = [
+  "GameStart",
+  "InProgress",
+  "Reconnect",
+  "WaitingForStats",
+];
 
 /** All coordinates here are Electron device-independent pixels, including negative monitors. */
 export function companionBounds(
@@ -17,25 +31,67 @@ export function companionBounds(
     Math.floor(area.width / 8),
     Math.floor(area.height / 8),
   );
-  const infoWidth = Math.min(400, area.width - margin * 2);
-  const pickerWidth = Math.min(344, area.width - margin * 2);
-  const infoHeight = Math.min(620, area.height - margin * 2);
-  const pickerHeight = Math.min(560, area.height - margin * 2);
-  const infoX = area.x + area.width - infoWidth - margin;
+  const size = (role: CompanionRole) => ({
+    width: Math.min(companionSizes[role].width, area.width - margin * 2),
+    height: Math.min(companionSizes[role].height, area.height - margin * 2),
+  });
+  const info = size("info"),
+    picker = size("picker");
+  const infoX = area.x + area.width - info.width - margin;
   return {
     picker: {
-      x: Math.max(area.x + margin, infoX - pickerWidth - 12),
+      x: Math.max(area.x + margin, infoX - picker.width - 12),
       y: area.y + margin,
-      width: pickerWidth,
-      height: pickerHeight,
+      ...picker,
     },
-    info: {
-      x: infoX,
-      y: area.y + margin,
-      width: infoWidth,
-      height: infoHeight,
-    },
+    info: { x: infoX, y: area.y + margin, ...info },
   };
+}
+
+/**
+ * 参考 Akari 的贴靠方式：小窗放在客户端窗口外侧，优先右侧；
+ * 一侧放不下两个窗时，Mini 窗放右侧、英雄信息窗放左侧；
+ * 都放不下时退回工作区右上角。结果始终限制在工作区内。
+ */
+export function alignToClient(
+  client: WindowBounds,
+  area: WindowBounds,
+): Record<CompanionRole, WindowBounds> {
+  const gap = 8;
+  const fallback = companionBounds(area);
+  const picker = fallback.picker,
+    info = fallback.info;
+  const clamp = (bounds: WindowBounds): WindowBounds => ({
+    ...bounds,
+    x: Math.min(Math.max(bounds.x, area.x), area.x + area.width - bounds.width),
+    y: Math.min(
+      Math.max(bounds.y, area.y),
+      area.y + area.height - bounds.height,
+    ),
+  });
+  const rightStart = client.x + client.width + gap;
+  const rightSpace = area.x + area.width - rightStart;
+  const leftSpace = client.x - gap - area.x;
+  const y = client.y;
+  const total = picker.width + gap + info.width;
+  if (rightSpace >= total)
+    return {
+      picker: clamp({ ...picker, x: rightStart, y }),
+      info: clamp({ ...info, x: rightStart + picker.width + gap, y }),
+    };
+  if (leftSpace >= total) {
+    const x = client.x - gap - total;
+    return {
+      picker: clamp({ ...picker, x, y }),
+      info: clamp({ ...info, x: x + picker.width + gap, y }),
+    };
+  }
+  if (rightSpace >= picker.width && leftSpace >= info.width)
+    return {
+      picker: clamp({ ...picker, x: rightStart, y }),
+      info: clamp({ ...info, x: client.x - gap - info.width, y }),
+    };
+  return fallback;
 }
 
 /** Pure session state: dismissals last until the next client phase/account, not each poll. */
@@ -45,6 +101,7 @@ export class CompanionController {
   private lastChampion: number | null = null;
   private clientChampion: number | null = null;
   private eligible = false;
+  private phase = "None";
   private dismissed = new Set<CompanionRole>();
   update(client: ConnectionState) {
     const context = `${client.status}:${client.region}:${client.summoner?.puuid}:${client.phase}`;
@@ -57,10 +114,12 @@ export class CompanionController {
     if (champion !== this.lastChampion) this.state.followingClient = true;
     this.lastChampion = this.clientChampion = champion;
     if (this.state.followingClient) this.state.championId = champion;
+    this.phase = client.phase;
+    // 客户端一连接（包括刚打开、尚未进房间）就显示 Mini 窗；进入游戏后收起。
     this.eligible =
       client.status === "connected" &&
       client.region === "TENCENT" &&
-      !["GameStart", "InProgress", "Reconnect"].includes(client.phase);
+      !hiddenPhases.includes(client.phase);
     return this.snapshot();
   }
   select(championId: number | null) {
@@ -74,7 +133,12 @@ export class CompanionController {
     return { ...this.state };
   }
   visible(role: CompanionRole, enabled: boolean) {
-    return this.eligible && enabled && !this.dismissed.has(role);
+    return (
+      this.eligible &&
+      enabled &&
+      !this.dismissed.has(role) &&
+      (role === "picker" || this.phase === "ChampSelect")
+    );
   }
   dismiss(role: CompanionRole) {
     this.dismissed.add(role);

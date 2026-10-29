@@ -33,7 +33,7 @@ const connection = computed(() =>
 );
 async function openCompanions() {
   const result = await api.companionWindow("show");
-  if (!result.ok) notify(result.error || "无法打开双弹窗");
+  if (!result.ok) notify(result.error || "无法打开客户端小窗");
 }
 </script>
 
@@ -65,8 +65,8 @@ async function openCompanions() {
     <div class="side-bottom">
       <button
         class="side-tool"
-        aria-label="打开客户端双弹窗"
-        title="打开客户端双弹窗"
+        aria-label="打开客户端小窗"
+        title="打开客户端小窗"
         @click="openCompanions"
       >
         <AppWindow :size="18" :stroke-width="1.7" />

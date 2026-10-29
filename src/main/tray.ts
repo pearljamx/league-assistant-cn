@@ -20,7 +20,7 @@ export function trayMenu(settings: Settings, actions: TrayActions) {
       click: actions.toggleAutoAccept,
     },
     {
-      label: "客户端双弹窗",
+      label: "客户端小窗",
       type: "checkbox",
       checked: settings.companionWindows !== false,
       click: actions.toggleCompanions,

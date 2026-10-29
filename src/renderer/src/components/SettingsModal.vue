@@ -29,7 +29,7 @@ const displays = ref([
 ]);
 async function openCompanions() {
   const result = await api.companionWindow("show");
-  if (!result.ok) notify(result.error || "无法打开双弹窗");
+  if (!result.ok) notify(result.error || "无法打开客户端小窗");
 }
 onMounted(async () => {
   const result = await api.getDisplays();
@@ -69,7 +69,7 @@ onMounted(async () => {
           <div class="setting-row">
             <div>
               <strong>关闭主窗口时</strong>
-              <p>最小化到托盘后，双弹窗与自动接受仍会按设置工作。</p>
+              <p>最小化到托盘后，客户端小窗与自动接受仍会按设置工作。</p>
             </div>
             <select
               aria-label="关闭主窗口时"
@@ -89,7 +89,7 @@ onMounted(async () => {
           <div class="setting-row">
             <div>
               <strong>托盘菜单</strong>
-              <p>右键托盘图标可切换自动接受、双弹窗或退出。</p>
+              <p>右键托盘图标可切换自动接受、客户端小窗或退出。</p>
             </div>
           </div>
         </template>
@@ -97,15 +97,18 @@ onMounted(async () => {
           <h3>多窗口</h3>
           <div class="setting-row">
             <div>
-              <strong>自动显示选人弹窗</strong>
-              <p>客户端连接后显示匹配状态，进入游戏自动收起。</p>
+              <strong>自动显示客户端小窗</strong>
+              <p>
+                客户端打开即显示 Mini
+                小窗；英雄信息窗只在英雄选择时出现，进入游戏自动收起。
+              </p>
             </div>
             <button
               class="switch"
               :class="{ on: settings.companionWindows !== false }"
               role="switch"
               :aria-checked="settings.companionWindows !== false"
-              aria-label="客户端双弹窗"
+              aria-label="自动显示客户端小窗"
               @click="
                 save({ companionWindows: settings.companionWindows === false })
               "
@@ -115,11 +118,13 @@ onMounted(async () => {
           </div>
           <div class="setting-row">
             <div>
-              <strong>重新打开两个小窗</strong>
-              <p>支持拖动。备选席可直接换用，普通选人不会自动锁定。</p>
+              <strong>重新打开小窗</strong>
+              <p>
+                默认贴在客户端旁边，拖动后保持位置。点头像只查看，点“换用”才替换英雄，不会自动锁定。
+              </p>
             </div>
             <button class="button secondary" @click="openCompanions">
-              打开双弹窗<ArrowUpRight :size="14" />
+              打开小窗<ArrowUpRight :size="14" />
             </button>
           </div>
           <div class="setting-row">

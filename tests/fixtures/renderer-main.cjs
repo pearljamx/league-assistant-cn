@@ -144,9 +144,9 @@ app.whenReady().then(async () => {
   for (const role of companions ? ["champion-picker", "champion-info"] : [""]) {
     const window = new BrowserWindow({
       show: false,
-      width: companions ? (role === "champion-picker" ? 344 : 400) : 1380,
-      height: companions ? (role === "champion-picker" ? 560 : 620) : 900,
-      x: companions ? (role === "champion-picker" ? 70 : 440) : undefined,
+      width: companions ? (role === "champion-picker" ? 340 : 360) : 1380,
+      height: companions ? (role === "champion-picker" ? 420 : 600) : 900,
+      x: companions ? (role === "champion-picker" ? 70 : 420) : undefined,
       y: companions ? 100 : undefined,
       webPreferences: {
         preload: path.join(__dirname, "renderer-preload.cjs"),

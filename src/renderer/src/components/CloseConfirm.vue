@@ -23,7 +23,7 @@ async function choose(action: "tray" | "quit") {
       aria-label="关闭主窗口"
     >
       <h2>关闭主窗口</h2>
-      <p>最小化到托盘后，双弹窗和已开启的自动接受仍会工作。</p>
+      <p>最小化到托盘后，客户端小窗和已开启的自动接受仍会工作。</p>
       <label class="close-remember"
         ><input
           v-model="remember"
