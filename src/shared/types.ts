@@ -1,3 +1,4 @@
+import type { AramHexSkillPosition } from "./rating";
 export type Mode = "rift" | "aram" | "hex";
 export type Position =
   | "ALL"
@@ -143,6 +144,38 @@ export interface Selection {
   localCellId: number | null;
   championId: number | null;
 }
+export interface ChampionChoices {
+  championIds: number[];
+  kind: "bench" | "pick" | "none";
+  reason: string;
+}
+export interface CompanionState {
+  championId: number | null;
+  followingClient: boolean;
+}
+export interface LivePlayer {
+  key: string;
+  puuid: string | null;
+  riotId: string | null;
+  championId: number;
+  teamId: number;
+  kills: number | null;
+  deaths: number | null;
+  assists: number | null;
+  level: number | null;
+  items: number[];
+  isSelf: boolean;
+  identityHidden: boolean;
+}
+export interface LiveGame {
+  status: "idle" | "selection" | "live" | "unavailable";
+  mode: Mode;
+  phase: string;
+  gameTime: number | null;
+  players: LivePlayer[];
+  message: string;
+  updatedAt: string;
+}
 export interface MatchPlayer {
   puuid: string;
   name: string;
@@ -191,16 +224,18 @@ export interface Settings {
   autoRecognize: boolean;
   monitor: number;
   overlay: boolean;
+  companionWindows?: boolean;
   managedRunePage: { id: number; puuid: string } | null;
 }
 export interface SkillRating {
   provider: "hexdata";
-  status: "needs-authorization";
-  score: null;
-  percentile: null;
-  date: null;
+  status: "ready" | "error" | "unavailable" | "needs-authorization";
+  score: number | null;
+  percentile: number | null;
+  date: string | null;
   message: string;
   url: string;
+  aramhex?: AramHexSkillPosition;
 }
 export interface Recognition {
   gameWindow?: { x: number; y: number; width: number; height: number };
@@ -236,6 +271,14 @@ export interface AssistantApi {
   saveSettings(patch: Partial<Settings>): Promise<Result<Settings>>;
   getCatalog(): Promise<Result<Catalog>>;
   getSelection(): Promise<Result<Selection>>;
+  getLiveGame(): Promise<Result<LiveGame>>;
+  getChampionChoices(): Promise<Result<ChampionChoices>>;
+  chooseChampion(championId: number): Promise<Result<void>>;
+  getCompanionState(): Promise<Result<CompanionState>>;
+  selectCompanionChampion(
+    championId: number | null,
+  ): Promise<Result<CompanionState>>;
+  companionWindow(action: "hide" | "show" | "main"): Promise<Result<void>>;
   getOverview(query: StatsQuery): Promise<Result<Overview>>;
   getRecommendation(
     championId: number,
@@ -255,7 +298,7 @@ export interface AssistantApi {
     index: number,
     expectedPerks: number[],
   ): Promise<Result<{ pageId: number }>>;
-  getRating(): Promise<Result<SkillRating>>;
+  getRating(riotId?: string): Promise<Result<SkillRating>>;
   openExternal(
     target: "hexdata" | "github" | "data-license",
   ): Promise<Result<void>>;
@@ -266,6 +309,8 @@ export interface AssistantApi {
     Result<{ id: number; name: string; width: number; height: number }[]>
   >;
   onState(callback: (state: ConnectionState) => void): () => void;
+  onSelection(callback: (selection: Selection) => void): () => void;
   onSettings(callback: (settings: Settings) => void): () => void;
   onRecognition(callback: (state: Recognition) => void): () => void;
+  onCompanionState(callback: (state: CompanionState) => void): () => void;
 }

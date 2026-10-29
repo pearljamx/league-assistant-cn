@@ -33,3 +33,5 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - run: npm run test:renderer
+      - run: npm run test:companions
+      - run: npm run test:history

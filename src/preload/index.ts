@@ -14,6 +14,12 @@ const api: AssistantApi = {
   saveSettings: (patch) => invoke("settings-save", patch),
   getCatalog: () => invoke("catalog"),
   getSelection: () => invoke("selection"),
+  getLiveGame: () => invoke("live-game"),
+  getChampionChoices: () => invoke("champion-choices"),
+  chooseChampion: (id) => invoke("champion-choose", id),
+  getCompanionState: () => invoke("companion-state"),
+  selectCompanionChampion: (id) => invoke("companion-select", id),
+  companionWindow: (action) => invoke("companion-window", action),
   getOverview: (query) => invoke("overview", query),
   getRecommendation: (championId, query) =>
     invoke("recommendation", championId, query),
@@ -24,14 +30,16 @@ const api: AssistantApi = {
   getRanked: (puuid) => invoke("ranked", puuid),
   applyRunes: (championId, query, index, expectedPerks) =>
     invoke("runes", championId, query, index, expectedPerks),
-  getRating: () => invoke("rating"),
+  getRating: (riotId) => invoke("rating", riotId),
   openExternal: (target) => invoke("open", target),
   getRecognition: () => invoke("recognition"),
   scanAugments: () => invoke("scan"),
   setManualAugments: (ids) => invoke("manual", ids),
   getDisplays: () => invoke("displays"),
   onState: (callback) => subscribe("assistant:state", callback),
+  onSelection: (callback) => subscribe("assistant:selection", callback),
   onSettings: (callback) => subscribe("assistant:settings", callback),
   onRecognition: (callback) => subscribe("assistant:recognition", callback),
+  onCompanionState: (callback) => subscribe("assistant:companion", callback),
 };
 contextBridge.exposeInMainWorld("assistant", api);

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 import { chromium } from "@playwright/test";
 import assert from "node:assert/strict";
 
@@ -9,10 +10,14 @@ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const port = server.address().port;
 await new Promise((resolve) => server.close(resolve));
 const env = { ...process.env };
+const { version } = JSON.parse(await readFile("package.json", "utf8"));
 delete env.ELECTRON_RUN_AS_NODE;
 const child = spawn(
-  resolve("dist/LeagueAssistantCN-0.1.0-x64-Portable.exe"),
-  [`--remote-debugging-port=${port}`],
+  resolve(`dist/LeagueAssistantCN-${version}-x64-Portable.exe`),
+  [
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${resolve("artifacts/portable-smoke-profile")}`,
+  ],
   { env, windowsHide: true, stdio: "ignore" },
 );
 let browser;

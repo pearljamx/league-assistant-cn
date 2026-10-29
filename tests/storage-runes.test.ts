@@ -76,7 +76,7 @@ describe("持久化与符文页面归属", () => {
         : { ownedPageCount: 1 },
     );
     const client = {
-      state: { summoner: { puuid: "a" }, phase: "Lobby" },
+      state: { status: "connected", summoner: { puuid: "a" }, phase: "Lobby" },
       request,
     } as unknown as Client;
     const service = new RuneService(client, storage, {
@@ -102,7 +102,12 @@ describe("持久化与符文页面归属", () => {
       { id: 2, isEditable: true, name: "联盟助手 · 202" },
     ]);
     const client = {
-      state: { summoner: { puuid: "a" }, phase: "ChampSelect", championId: 1 },
+      state: {
+        status: "connected",
+        summoner: { puuid: "a" },
+        phase: "ChampSelect",
+        championId: 1,
+      },
       request,
     } as unknown as Client;
     const service = new RuneService(client, storage, {
@@ -124,7 +129,11 @@ describe("持久化与符文页面归属", () => {
     const request = vi.fn();
     const service = new RuneService(
       {
-        state: { summoner: { puuid: "a" }, phase: "Lobby" },
+        state: {
+          status: "connected",
+          summoner: { puuid: "a" },
+          phase: "Lobby",
+        },
         request,
       } as unknown as Client,
       storage,
@@ -142,4 +151,40 @@ describe("持久化与符文页面归属", () => {
     ).rejects.toMatchObject({ code: "RUNES_PREVIEW_CHANGED" });
     expect(request).not.toHaveBeenCalled();
   });
+  it.each(["account", "platform", "generation", "disconnect"])(
+    "备份期间 %s 变化时拒绝符文写入",
+    async (change) => {
+      const storage = new Storage(dir);
+      await storage.initialize();
+      await storage.rememberRunePage({ id: 2, puuid: "a" });
+      const request = vi.fn(async () => [
+        { id: 2, isEditable: true, name: "联盟助手 · 202" },
+      ]);
+      const state = {
+        status: "connected",
+        summoner: { puuid: "a" },
+        phase: "Lobby",
+        platform: "HN1",
+      };
+      const client = { state, sessionGeneration: 1, request };
+      vi.spyOn(storage, "put").mockImplementationOnce(async () => {
+        if (change === "account") state.summoner.puuid = "b";
+        if (change === "platform") state.platform = "HN2";
+        if (change === "generation") client.sessionGeneration++;
+        if (change === "disconnect") state.status = "disconnected";
+      });
+      const service = new RuneService(client as unknown as Client, storage, {
+        recommendation: async () => ({ runes: [option] }),
+      } as unknown as TencentProvider);
+      await expect(
+        service.apply(
+          202,
+          { mode: "rift", band: "all", tier: 255, position: "BOTTOM" },
+          0,
+          option.perks,
+        ),
+      ).rejects.toMatchObject({ code: "SESSION_CHANGED" });
+      expect(request).toHaveBeenCalledTimes(1);
+    },
+  );
 });

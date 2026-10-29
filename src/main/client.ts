@@ -6,6 +6,7 @@ import { AppError, safeError } from "./errors";
 import { AutoAccept } from "./automation";
 import type {
   ConnectionState,
+  ChampionChoices,
   Phase,
   RankedEntry,
   Selection,
@@ -122,6 +123,8 @@ export class Client extends EventEmitter {
   private readyEpoch = 0;
   private selectionRevision = 0;
   private identityRevision = 0;
+  private connectionRevision = 0;
+  private choosingChampion = false;
   private accept: AutoAccept;
   constructor(private storage: Storage) {
     super();
@@ -168,6 +171,10 @@ export class Client extends EventEmitter {
     if (this.stopped) return;
     this.timer = setInterval(() => void this.tick(), 2500);
   }
+  /** Opaque generation for services to invalidate in-flight work after reconnects. */
+  get sessionGeneration() {
+    return this.connectionRevision;
+  }
   stop() {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
@@ -200,6 +207,7 @@ export class Client extends EventEmitter {
     });
   }
   private disconnect() {
+    this.connectionRevision++;
     this.selectionRevision++;
     this.identityRevision++;
     const socket = this.socket;
@@ -275,6 +283,7 @@ export class Client extends EventEmitter {
             this.state.championId = null;
             this.nextIdentity = 0;
             this.accept.cancel();
+            this.connectionRevision++;
             this.emit("account-changed");
             this.publish();
             return;
@@ -288,6 +297,7 @@ export class Client extends EventEmitter {
             this.selection = emptySelection();
             this.state.ranked = [];
             this.accept.cancel();
+            this.connectionRevision++;
             this.emit("account-changed");
           }
           this.state.summoner = normalizeSummoner(event.data);
@@ -353,6 +363,194 @@ export class Client extends EventEmitter {
       if (current()) this.selection = emptySelection();
     }
   }
+  private championChoiceGuard() {
+    if (
+      this.state.status !== "connected" ||
+      this.state.region !== "TENCENT" ||
+      this.state.phase !== "ChampSelect" ||
+      !this.state.summoner?.puuid ||
+      !this.credentials
+    )
+      throw new AppError(
+        "请在国服客户端选人阶段操作。",
+        "CHAMPION_INVALID_PHASE",
+      );
+    const owner = this.state.summoner.puuid;
+    const credentials = this.credentials;
+    const revision = this.selectionRevision;
+    const mode = this.state.mode;
+    return () => {
+      if (
+        this.state.status !== "connected" ||
+        this.state.region !== "TENCENT" ||
+        this.state.phase !== "ChampSelect" ||
+        this.state.summoner?.puuid !== owner ||
+        this.credentials !== credentials ||
+        this.selectionRevision !== revision ||
+        this.state.mode !== mode
+      )
+        throw new AppError(
+          "选人或账号状态已变化，请刷新后重试。",
+          "STALE_SELECTION",
+        );
+    };
+  }
+  private ownsLocalCell(session: any) {
+    const local = session.myTeam?.find(
+      (member: any) => member.cellId === session.localPlayerCellId,
+    );
+    const own = this.state.summoner;
+    return Boolean(
+      Number.isInteger(session.localPlayerCellId) &&
+        local &&
+        own &&
+        (local.puuid === own.puuid ||
+          (own.summonerId > 0 && local.summonerId === own.summonerId)),
+    );
+  }
+  private pickAction(session: any) {
+    return (session.actions ?? [])
+      .flat()
+      .find(
+        (action: any) =>
+          Number.isInteger(action.id) &&
+          action.id >= 0 &&
+          action.actorCellId === session.localPlayerCellId &&
+          action.type === "pick" &&
+          action.isInProgress === true &&
+          action.completed === false,
+      );
+  }
+  private choicesFromSession(
+    session: any,
+    pickable: number[],
+  ): ChampionChoices {
+    if (!this.ownsLocalCell(session))
+      return {
+        championIds: [],
+        kind: "none",
+        reason: "无法确认本人选人位置，请在客户端操作",
+      };
+    if (this.state.mode === "aram" || this.state.mode === "hex") {
+      const ids =
+        session.benchEnabled === true
+          ? (session.benchChampions ?? []).map((item: any) =>
+              Number(item.championId),
+            )
+          : [];
+      return {
+        championIds: ids.filter((id: number) => Number.isInteger(id) && id > 0),
+        kind: session.benchEnabled === true ? "bench" : "none",
+        reason:
+          session.benchEnabled === true
+            ? "可直接换用当前备选席英雄"
+            : "当前客户端未开放备选席换用",
+      };
+    }
+    const active = this.pickAction(session);
+    return {
+      championIds: active
+        ? pickable.filter((id) => Number.isInteger(id) && id > 0)
+        : [],
+      kind: active ? "pick" : "none",
+      reason: active
+        ? "选择英雄将同步客户端，不自动锁定"
+        : "等待本人选人回合，不能修改队友或已锁定的英雄",
+    };
+  }
+  async getChampionChoices(): Promise<ChampionChoices> {
+    if (this.state.phase !== "ChampSelect" || this.state.status !== "connected")
+      return {
+        championIds: [],
+        kind: "none",
+        reason: "进入选人后可换用英雄；现在可先查看推荐",
+      };
+    const current = this.championChoiceGuard();
+    const session = await this.request("/lol-champ-select/v1/session");
+    current();
+    const pickable =
+      this.state.mode === "rift" && this.pickAction(session)
+        ? await this.request<number[]>(
+            "/lol-champ-select/v1/pickable-champion-ids",
+          )
+        : [];
+    current();
+    return this.choicesFromSession(
+      session,
+      Array.isArray(pickable) ? pickable : [],
+    );
+  }
+  async chooseChampion(championId: number): Promise<void> {
+    if (!Number.isInteger(championId) || championId < 1 || championId > 100000)
+      throw new AppError("请选择有效英雄。", "INVALID_CHAMPION");
+    if (this.choosingChampion)
+      throw new AppError("正在同步英雄，请稍候。", "CHAMPION_BUSY");
+    const current = this.championChoiceGuard();
+    this.choosingChampion = true;
+    try {
+      const session = await this.request("/lol-champ-select/v1/session");
+      current();
+      const pickable =
+        this.state.mode === "rift"
+          ? await this.request<number[]>(
+              "/lol-champ-select/v1/pickable-champion-ids",
+            )
+          : [];
+      current();
+      const choices = this.choicesFromSession(
+        session,
+        Array.isArray(pickable) ? pickable : [],
+      );
+      if (!choices.championIds.includes(championId))
+        throw new AppError(
+          "该英雄当前不可换用，请刷新或在客户端操作。",
+          "CHAMPION_UNAVAILABLE",
+        );
+      const phase = await this.request<string>(
+        "/lol-gameflow/v1/gameflow-phase",
+      );
+      current();
+      if (phase !== "ChampSelect")
+        throw new AppError("已离开选人阶段。", "CHAMPION_INVALID_PHASE");
+      // Verify a second fresh session immediately before the only explicit user-triggered write.
+      const latest = await this.request("/lol-champ-select/v1/session");
+      current();
+      const fresh = this.choicesFromSession(
+        latest,
+        Array.isArray(pickable) ? pickable : [],
+      );
+      if (
+        latest.localPlayerCellId !== session.localPlayerCellId ||
+        fresh.kind !== choices.kind ||
+        !fresh.championIds.includes(championId)
+      )
+        throw new AppError(
+          "备选席或选人状态已变化，请刷新后重试。",
+          "STALE_SELECTION",
+        );
+      if (fresh.kind === "bench") {
+        await this.request(
+          `/lol-champ-select/v1/session/bench/swap/${championId}`,
+          "POST",
+        );
+      } else {
+        const action = this.pickAction(latest);
+        if (!action || action.id !== this.pickAction(session)?.id)
+          throw new AppError(
+            "本人选人回合已变化，请重新选择。",
+            "STALE_SELECTION",
+          );
+        await this.request(
+          `/lol-champ-select/v1/session/actions/${action.id}`,
+          "PATCH",
+          { championId, completed: false },
+        );
+      }
+      await this.refreshSelection();
+    } finally {
+      this.choosingChampion = false;
+    }
+  }
   private async tick() {
     if (this.busy || this.stopped) return;
     this.busy = true;
@@ -404,6 +602,7 @@ export class Client extends EventEmitter {
           this.selection = emptySelection();
           this.state.championId = null;
           this.accept.cancel();
+          this.connectionRevision++;
           this.emit("account-changed");
         }
         if (region.region !== "TENCENT")

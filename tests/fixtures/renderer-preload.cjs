@@ -1,5 +1,15 @@
 // Synthetic fixtures are labelled and excluded from production packaging.
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
+const companionMode = process.argv.includes("--fixture-companions");
+const invoke = (name, ...args) =>
+  ipcRenderer.invoke("fixture:" + name, ...args);
+const remote = (name, ...args) =>
+  invoke(name, ...args).then((data) => ({ ok: true, data }));
+const remoteSubscribe = (name, callback) => {
+  const handler = (_event, value) => callback(value);
+  ipcRenderer.on("fixture:" + name, handler);
+  return () => ipcRenderer.removeListener("fixture:" + name, handler);
+};
 const listeners = { state: [], settings: [], recognition: [] };
 const ok = (data) => Promise.resolve({ ok: true, data });
 const unavailable = () =>
@@ -63,6 +73,62 @@ const catalog = names.map((name, index) => ({
 }));
 const perks = [8005, 9111, 9104, 8014, 8139, 8140, 5008, 5008, 5011];
 const runeCalls = [];
+let recommendationDelay = 0;
+let historyDelay = 0;
+const fixturePlayers = () => [
+  {
+    puuid: state.summoner?.puuid || "fixture-player",
+    name: (state.summoner?.gameName || "测试账号") + "#TEST",
+    championId: 202,
+    teamId: 100,
+    win: true,
+    kills: 8,
+    deaths: 2,
+    assists: 12,
+    items: [],
+    damage: 25000,
+    gold: 13000,
+    cs: 100,
+  },
+  {
+    puuid: "fixture-peer",
+    name: "测试队友#TEST",
+    championId: 22,
+    teamId: 100,
+    win: true,
+    kills: 5,
+    deaths: 3,
+    assists: 14,
+    items: [],
+    damage: 21000,
+    gold: 11000,
+    cs: 90,
+  },
+  {
+    puuid: "fixture-opponent",
+    name: "测试对手#TEST",
+    championId: 99,
+    teamId: 200,
+    win: false,
+    kills: 3,
+    deaths: 8,
+    assists: 9,
+    items: [],
+    damage: 15000,
+    gold: 9000,
+    cs: 80,
+  },
+];
+const fixtureMatch = () => ({
+  id: "100001",
+  queueId: 2400,
+  mode: "KIWI",
+  date: "2026-10-29T00:00:00Z",
+  duration: 1200,
+  players: fixturePlayers(),
+  private: false,
+  remake: false,
+});
 const source = (band) => ({
   id: "fixture",
   name: "本地测试数据",
@@ -88,6 +154,7 @@ const api = {
       champions: [
         { id: 202, name: "测试英雄一", alias: "Jhin", title: "测试", icon: "" },
         { id: 22, name: "测试英雄二", alias: "Ashe", title: "测试", icon: "" },
+        { id: 99, name: "测试英雄三", alias: "Lux", title: "测试", icon: "" },
       ],
       items: {},
       perks: Object.fromEntries(
@@ -157,8 +224,11 @@ const api = {
       message: "隔离测试不查询评分",
       url: "https://hexdata.com.cn/matchmaking-position",
     }),
-  getRecommendation: (championId, query) =>
-    ok({
+  getRecommendation: async (championId, query) => {
+    const wait = recommendationDelay;
+    recommendationDelay = 0;
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    return ok({
       source: { ...source(query.band), mode: query.mode },
       championId,
       position: query.position,
@@ -170,7 +240,7 @@ const api = {
       unavailable: [],
       runes: [
         {
-          label: "测试符文方案",
+          label: "测试符文方案" + championId,
           perks,
           primaryStyleId: 8000,
           subStyleId: 8100,
@@ -179,11 +249,69 @@ const api = {
           pickRate: 0.1,
         },
       ],
+    });
+  },
+  getHistory: async () => {
+    const delay = historyDelay;
+    historyDelay = 0;
+    const result = {
+      matches: [fixtureMatch()],
+      nextIndex: 20,
+      hasMore: false,
+      source: "sgp",
+      warning: null,
+      fetchedAt: "2026-10-29T00:00:00Z",
+    };
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    return ok(result);
+  },
+  getMatch: () => ok(fixtureMatch()),
+  findSummoner: (name) =>
+    ok({
+      puuid: name.startsWith("测试队友") ? "fixture-peer" : "fixture-opponent",
+      summonerId: 2,
+      gameName: name.split("#")[0],
+      tagLine: name.split("#")[1] || "TEST",
+      level: 88,
+      iconId: 0,
     }),
-  getHistory: unavailable,
-  getMatch: unavailable,
-  findSummoner: unavailable,
-  getRanked: unavailable,
+  getRanked: () =>
+    ok([
+      {
+        queue: "RANKED_SOLO_5x5",
+        tier: "GOLD",
+        division: "II",
+        wins: 12,
+        losses: 8,
+        lp: 35,
+      },
+    ]),
+  getLiveGame: () =>
+    ok({
+      status: state.phase === "InProgress" ? "live" : "idle",
+      mode: state.mode,
+      phase: state.phase,
+      gameTime: state.phase === "InProgress" ? 600 : null,
+      message: "隔离实时对局数据",
+      updatedAt: "",
+      players:
+        state.phase === "InProgress"
+          ? fixturePlayers().map((player, index) => ({
+              key: String(index),
+              puuid: index === 2 ? null : player.puuid,
+              riotId: index === 2 ? null : player.name,
+              championId: player.championId,
+              teamId: player.teamId,
+              kills: player.kills,
+              deaths: player.deaths,
+              assists: player.assists,
+              level: 10,
+              items: player.items,
+              isSelf: index === 0,
+              identityHidden: index === 2,
+            }))
+          : [],
+    }),
   applyRunes: (championId, query, index, expectedPerks) => {
     runeCalls.push({ championId, query, index, perks: expectedPerks });
     return ok({ pageId: 7 });
@@ -193,7 +321,25 @@ const api = {
   onState: subscribe("state"),
   onSettings: subscribe("settings"),
   onRecognition: subscribe("recognition"),
+  getCompanionState: () => remote("companion"),
+  getChampionChoices: () =>
+    ok({ championIds: [22, 99], kind: "bench", reason: "隔离测试备选席" }),
+  selectCompanionChampion: (id) => remote("select-companion", id),
+  companionWindow: (action) => remote("window", action),
+  chooseChampion: (id) => invoke("choose", id),
+  onCompanionState: (callback) => remoteSubscribe("companion", callback),
+  onSelection: (callback) => remoteSubscribe("selection", callback),
 };
+if (companionMode)
+  Object.assign(api, {
+    getState: () => remote("state"),
+    getSettings: () => remote("settings"),
+    saveSettings: (patch) => remote("settings-save", patch),
+    getSelection: () => remote("selection"),
+    getRating: () => remote("rating"),
+    onState: (callback) => remoteSubscribe("state", callback),
+    onSettings: (callback) => remoteSubscribe("settings", callback),
+  });
 contextBridge.exposeInMainWorld("assistant", api);
 contextBridge.exposeInMainWorld("rendererFixture", {
   runeCalls: () => runeCalls,
@@ -202,10 +348,22 @@ contextBridge.exposeInMainWorld("rendererFixture", {
     emit("recognition", recognition);
   },
   state: (patch) => {
+    if (companionMode) return invoke("patch-state", patch);
     Object.assign(state, patch);
     emit("state", state);
   },
   delayManual: (milliseconds) => {
     delay = milliseconds;
   },
+  selection: (patch) => invoke("patch-selection", patch),
+  rating: (patch) => invoke("patch-rating", patch),
+  delayRating: (milliseconds) => invoke("delay-rating", milliseconds),
+  delayRecommendation: (milliseconds) => {
+    recommendationDelay = milliseconds;
+  },
+  delayHistory: (milliseconds) => {
+    historyDelay = milliseconds;
+  },
+  chooseCalls: () => invoke("choose-calls"),
+  windowActions: () => invoke("window-actions"),
 });

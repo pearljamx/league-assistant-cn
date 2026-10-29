@@ -16,17 +16,31 @@ import { CatalogProvider } from "./providers/catalog";
 import { TencentProvider } from "./providers/tencent";
 import { AramHexProvider } from "./providers/aramhex";
 import { HistoryProvider } from "./providers/history";
+import { LiveGameProvider } from "./providers/live-game";
 import { SkillRatingProvider } from "./providers/rating";
 import { RuneService } from "./runes";
 import { RecognitionService } from "./recognition";
-import { safeError } from "./errors";
+import { AppError, safeError } from "./errors";
+import {
+  CompanionController,
+  companionBounds,
+  type CompanionRole,
+} from "./companions";
 import { setPublicFetcher } from "./http";
 import type { Result } from "../shared/types";
 
 const current = dirname(fileURLToPath(import.meta.url));
 const root = join(current, "../..");
 let mainWindow: BrowserWindow | null = null,
-  overlay: BrowserWindow | null = null;
+  overlay: BrowserWindow | null = null,
+  pickerWindow: BrowserWindow | null = null,
+  infoWindow: BrowserWindow | null = null;
+let quitting = false;
+const ownedWindows = () =>
+  [mainWindow, overlay, pickerWindow, infoWindow].filter(
+    (window): window is BrowserWindow =>
+      Boolean(window && !window.isDestroyed()),
+  );
 let client: Client, recognition: RecognitionService;
 const single = app.requestSingleInstanceLock();
 if (!single) app.quit();
@@ -43,10 +57,14 @@ else {
       const storage = new Storage(join(app.getPath("userData"), "local"));
       await storage.initialize();
       client = new Client(storage);
+      const companions = new CompanionController();
+      const readyCompanions = new Set<CompanionRole>();
+      let companionSelectionRequest = 0;
       const catalog = new CatalogProvider(storage),
         tencent = new TencentProvider(storage, catalog),
         aramhex = new AramHexProvider(storage);
       const history = new HistoryProvider(client, storage),
+        liveGame = new LiveGameProvider(client),
         rating = new SkillRatingProvider(),
         runes = new RuneService(client, storage, tencent);
       recognition = new RecognitionService(
@@ -87,15 +105,20 @@ else {
           autoRecognize: z.boolean().optional(),
           monitor: z.number().int().min(0).max(15).optional(),
           overlay: z.boolean().optional(),
+          companionWindows: z.boolean().optional(),
         })
         .strict();
-      function handle(name: string, handler: (...args: any[]) => unknown) {
+      function handle(
+        name: string,
+        handler: (...args: any[]) => unknown,
+        withSender = false,
+      ) {
         ipcMain.handle(
           "assistant:" + name,
           async (event, ...args): Promise<Result<any>> => {
             if (
-              ![mainWindow?.webContents.id, overlay?.webContents.id].includes(
-                event.sender.id,
+              !ownedWindows().some(
+                (window) => window.webContents.id === event.sender.id,
               )
             )
               return {
@@ -104,7 +127,12 @@ else {
                 error: "未知界面请求已拒绝。",
               };
             try {
-              return { ok: true, data: await handler(...args) };
+              return {
+                ok: true,
+                data: await handler(
+                  ...(withSender ? [args[0], event.sender.id] : args),
+                ),
+              };
             } catch (error) {
               const safe = safeError(error);
               return {
@@ -129,10 +157,73 @@ else {
         recognition.settingsChanged();
         broadcast("assistant:settings", settings);
         updateOverlay();
+        updateCompanionWindows();
         return settings;
       });
       handle("catalog", () => catalog.get());
       handle("selection", () => client.selection);
+      handle("live-game", () => liveGame.get());
+      handle("champion-choices", () => client.getChampionChoices());
+      handle("champion-choose", (value) =>
+        client.chooseChampion(hero.parse(value)),
+      );
+      handle("companion-state", () => companions.snapshot());
+      handle("companion-select", async (value) => {
+        const request = ++companionSelectionRequest;
+        const context = () =>
+          `${client.sessionGeneration}:${client.state.status}:${client.state.summoner?.puuid}:${client.state.platform}:${client.state.phase}:${client.state.championId}`;
+        const originalContext = context();
+        const championId = value === null ? null : hero.parse(value);
+        if (
+          championId !== null &&
+          !(await catalog.get()).champions.some(
+            (champion) => champion.id === championId,
+          )
+        )
+          throw new AppError(
+            "当前资料未收录该英雄，请刷新后重试。",
+            "INVALID_CHAMPION",
+          );
+        if (
+          request !== companionSelectionRequest ||
+          context() !== originalContext
+        )
+          throw new AppError(
+            "英雄或账号状态已变化，请重新选择。",
+            "STALE_SELECTION",
+          );
+        const state = companions.select(championId);
+        broadcast("assistant:companion", state);
+        return state;
+      });
+      handle(
+        "companion-window",
+        async (value, senderId) => {
+          const action = z.enum(["hide", "show", "main"]).parse(value);
+          if (action === "main") {
+            mainWindow?.show();
+            mainWindow?.focus();
+            return;
+          }
+          if (action === "show") {
+            if (storage.getSettings().companionWindows === false) {
+              const settings = await storage.updateSettings({
+                companionWindows: true,
+              });
+              broadcast("assistant:settings", settings);
+            }
+            companions.reopen();
+          } else {
+            if (pickerWindow?.webContents.id === senderId)
+              companions.dismiss("picker");
+            else if (infoWindow?.webContents.id === senderId)
+              companions.dismiss("info");
+            else throw new AppError("只能收起当前弹窗。", "INVALID_WINDOW");
+          }
+          updateCompanionWindows();
+        },
+        true,
+      );
       handle("overview", (value) => {
         const parsed = query.parse(value);
         return parsed.mode === "hex"
@@ -167,7 +258,27 @@ else {
           z.array(z.number().int().positive()).length(9).parse(expectedPerks),
         ),
       );
-      handle("rating", () => rating.query());
+      handle("rating", async (value) => {
+        const owner = client.state.summoner?.puuid;
+        const platform = client.state.platform;
+        const generation = client.sessionGeneration;
+        const status = client.state.status;
+        const riotId =
+          value === undefined
+            ? client.state.summoner?.tagLine
+              ? `${client.state.summoner.gameName}#${client.state.summoner.tagLine}`
+              : undefined
+            : z.string().min(1).max(100).parse(value);
+        const result = await rating.query(riotId, platform);
+        if (
+          client.state.summoner?.puuid !== owner ||
+          client.state.platform !== platform ||
+          client.sessionGeneration !== generation ||
+          client.state.status !== status
+        )
+          throw new AppError("账号或大区已变化，请重新查询。", "STALE_ACCOUNT");
+        return result;
+      });
       const urls = {
         hexdata: "https://hexdata.com.cn/matchmaking-position",
         github: "https://github.com/pearljamx/league-assistant-cn",
@@ -224,7 +335,38 @@ else {
       });
       overlay.setIgnoreMouseEvents(true, { forward: true });
       overlay.setAlwaysOnTop(true, "screen-saver");
-      for (const window of [mainWindow, overlay]) {
+      const area = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
+      const bounds = companionBounds(area);
+      for (const role of ["picker", "info"] as const) {
+        const window = new BrowserWindow({
+          ...bounds[role],
+          frame: false,
+          resizable: false,
+          movable: true,
+          show: false,
+          skipTaskbar: true,
+          alwaysOnTop: true,
+          backgroundColor: "#10181b",
+          title:
+            role === "picker"
+              ? "英雄快选 · 英雄联盟助手"
+              : "英雄情报 · 英雄联盟助手",
+          webPreferences,
+        });
+        if (role === "picker") pickerWindow = window;
+        else infoWindow = window;
+        window.on("ready-to-show", () => {
+          readyCompanions.add(role);
+          updateCompanionWindows();
+        });
+        window.on("close", (event) => {
+          if (quitting) return;
+          event.preventDefault();
+          companions.dismiss(role);
+          window.hide();
+        });
+      }
+      for (const window of ownedWindows()) {
         window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
         window.webContents.on("will-navigate", (event) =>
           event.preventDefault(),
@@ -233,17 +375,50 @@ else {
       if (process.env.ELECTRON_RENDERER_URL) {
         await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
         await overlay.loadURL(process.env.ELECTRON_RENDERER_URL + "/#overlay");
+        await pickerWindow!.loadURL(
+          process.env.ELECTRON_RENDERER_URL + "/#champion-picker",
+        );
+        await infoWindow!.loadURL(
+          process.env.ELECTRON_RENDERER_URL + "/#champion-info",
+        );
       } else {
         await mainWindow.loadFile(join(current, "../renderer/index.html"));
         await overlay.loadFile(join(current, "../renderer/index.html"), {
           hash: "overlay",
         });
+        await pickerWindow!.loadFile(join(current, "../renderer/index.html"), {
+          hash: "champion-picker",
+        });
+        await infoWindow!.loadFile(join(current, "../renderer/index.html"), {
+          hash: "champion-info",
+        });
       }
       const broadcast = (event: string, data: unknown) => {
-        for (const window of [mainWindow, overlay])
-          if (window && !window.isDestroyed())
-            window.webContents.send(event, data);
+        for (const window of ownedWindows())
+          window.webContents.send(event, data);
       };
+      function updateCompanionWindows() {
+        const enabled = storage.getSettings().companionWindows !== false;
+        for (const [role, window] of [
+          ["picker", pickerWindow],
+          ["info", infoWindow],
+        ] as const) {
+          if (!window || window.isDestroyed()) continue;
+          if (readyCompanions.has(role) && companions.visible(role, enabled)) {
+            if (!window.isVisible()) window.showInactive();
+          } else window.hide();
+        }
+      }
+      const repositionCompanions = () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        const next = companionBounds(
+          screen.getDisplayMatching(mainWindow.getBounds()).workArea,
+        );
+        pickerWindow?.setBounds(next.picker);
+        infoWindow?.setBounds(next.info);
+      };
+      screen.on("display-removed", repositionCompanions);
+      screen.on("display-metrics-changed", repositionCompanions);
       function updateOverlay() {
         if (!overlay || overlay.isDestroyed()) return;
         if (
@@ -272,8 +447,17 @@ else {
         overlay.showInactive();
       }
       client.on("state", (state) => {
+        const previous = companions.snapshot();
+        const selected = companions.update(state);
+        if (
+          previous.championId !== selected.championId ||
+          previous.followingClient !== selected.followingClient
+        )
+          broadcast("assistant:companion", selected);
         broadcast("assistant:state", state);
+        broadcast("assistant:selection", client.selection);
         updateOverlay();
+        updateCompanionWindows();
       });
       recognition.on("recognition", (state) => {
         broadcast("assistant:recognition", state);
@@ -292,8 +476,11 @@ else {
 }
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", () => {
+  quitting = true;
   client?.stop();
   recognition?.stop();
   globalShortcut.unregisterAll();
   if (overlay && !overlay.isDestroyed()) overlay.destroy();
+  if (pickerWindow && !pickerWindow.isDestroyed()) pickerWindow.destroy();
+  if (infoWindow && !infoWindow.isDestroyed()) infoWindow.destroy();
 });

@@ -42,6 +42,11 @@ import type {
 import SourceBadge from "./components/SourceBadge.vue";
 import ChampionIcon from "./components/ChampionIcon.vue";
 import EquipmentRow from "./components/EquipmentRow.vue";
+import { version as appVersion } from "../../../package.json";
+import HistoryWorkspace from "./components/HistoryWorkspace.vue";
+const historyWorkspace = ref<InstanceType<typeof HistoryWorkspace> | null>(
+  null,
+);
 
 const isOverlay = location.hash === "#overlay";
 const page = ref("dashboard");
@@ -352,6 +357,9 @@ async function save(patch: Partial<Settings>) {
     notify((error as Error).message);
   }
 }
+async function showCompanionWindows() {
+  await run("companion", () => unwrap(api.companionWindow("show")));
+}
 async function loadOverview() {
   const epoch = ++overviewEpoch,
     value = { ...query.value };
@@ -447,8 +455,8 @@ async function searchPlayer() {
 }
 function showMyHistory() {
   historyTarget.value = state.value.summoner;
+  if (page.value === "history") void historyWorkspace.value?.showOwn();
   page.value = "history";
-  void loadHistory();
 }
 async function showMatch(match: Match) {
   detail.value = match;
@@ -589,8 +597,6 @@ watch(page, (value) => {
     if (settings.value.mode !== "hex") void save({ mode: "hex" });
     void loadRanking();
   }
-  if (value === "history" && !historyPage.value && state.value.summoner)
-    void loadHistory();
   if (value === "selection") {
     if (
       state.value.status === "connected" &&
@@ -793,7 +799,8 @@ onUnmounted(() => {
           工作台 <ChevronRight :size="13" /><span>{{ currentPage.title }}</span>
         </div>
         <div class="topbar-right">
-          <span class="version">v0.1.0</span><span class="topbar-divider"></span
+          <span class="version">v{{ appVersion }}</span
+          ><span class="topbar-divider"></span
           ><span
             :class="['phase-badge', { live: state.phase === 'InProgress' }]"
             ><span class="status-dot"></span
@@ -837,13 +844,9 @@ onUnmounted(() => {
             ><button
               v-else-if="page === 'history'"
               class="button secondary"
-              :disabled="busy.history"
-              @click="loadHistory()"
+              @click="historyWorkspace?.refresh()"
             >
-              <RefreshCw
-                :size="15"
-                :class="{ spinning: busy.history }"
-              />刷新战绩</button
+              <RefreshCw :size="15" />刷新当前视图</button
             ><button
               v-else-if="page === 'selection'"
               class="button secondary"
@@ -1158,153 +1161,13 @@ onUnmounted(() => {
           </p>
         </template>
 
-        <template v-if="page === 'history'">
-          <div class="search-toolbar">
-            <div class="search-field wide">
-              <Search :size="17" /><input
-                v-model="riotId"
-                placeholder="游戏名#标签 · 查询当前大区"
-                aria-label="玩家游戏名"
-                @keyup.enter="searchPlayer"
-              /><button
-                class="text-button"
-                :disabled="busy.search"
-                @click="searchPlayer"
-              >
-                {{ busy.search ? "查询中" : "查询玩家" }}
-              </button>
-            </div>
-            <button class="button secondary" @click="showMyHistory">
-              我的战绩
-            </button>
-          </div>
-          <div v-if="historyTarget" class="player-summary">
-            <div class="avatar-large">
-              {{ historyTarget.gameName.slice(0, 1) || "召" }}
-            </div>
-            <div>
-              <h2>
-                {{ historyTarget.gameName
-                }}<span class="muted">#{{ historyTarget.tagLine }}</span>
-              </h2>
-              <p>
-                等级 {{ historyTarget.level }} ·
-                {{ state.platform || "当前大区"
-                }}<span v-if="winSummary?.games">
-                  · 已加载 {{ winSummary.games }} 场有效对局，胜率
-                  {{ percent(winSummary.wins / winSummary.games) }}</span
-                >
-              </p>
-            </div>
-          </div>
-          <div v-if="errors.search || errors.history" class="notice warning">
-            <CircleAlert :size="17" /><span>{{
-              errors.search || errors.history
-            }}</span>
-          </div>
-          <div v-if="historyPage?.warning" class="notice">
-            <CircleAlert :size="17" /><span
-              >{{ historyPage.warning }} ·
-              {{ date(historyPage.fetchedAt) }}</span
-            >
-          </div>
-          <div v-if="busy.history && !historyPage" class="loading-state tall">
-            <RefreshCw
-              :size="23"
-              class="spinning"
-            />正在读取大区战绩，服务繁忙时需要稍候
-          </div>
-          <div v-if="historyPage" class="match-list">
-            <button
-              v-for="match in historyPage.matches"
-              :key="match.id"
-              :class="[
-                'match-row',
-                playerFor(match)?.win ? 'victory' : 'defeat',
-                { remake: match.remake },
-              ]"
-              @click="showMatch(match)"
-            >
-              <div class="match-result">
-                <strong>{{
-                  match.remake
-                    ? "重开"
-                    : playerFor(match)?.win
-                      ? "胜利"
-                      : "失败"
-                }}</strong
-                ><small>{{
-                  match.mode === "KIWI"
-                    ? "海克斯大乱斗"
-                    : match.mode === "ARAM"
-                      ? "极地大乱斗"
-                      : match.mode === "CLASSIC"
-                        ? "召唤师峡谷"
-                        : match.mode
-                }}</small>
-              </div>
-              <ChampionIcon
-                :champion="champions.get(playerFor(match)?.championId || 0)"
-                :size="46"
-              />
-              <div class="match-kda">
-                <strong
-                  >{{ playerFor(match)?.kills }}
-                  <span>/ {{ playerFor(match)?.deaths }} /</span>
-                  {{ playerFor(match)?.assists }}</strong
-                ><small>{{
-                  champions.get(playerFor(match)?.championId || 0)?.name
-                }}</small>
-              </div>
-              <div class="match-items">
-                <span
-                  v-for="id in playerFor(match)?.items.slice(0, 6)"
-                  :key="id"
-                  class="item-icon"
-                  :title="catalog.items[id]?.name || String(id)"
-                  ><img
-                    v-if="catalog.items[id]?.icon"
-                    :src="catalog.items[id].icon"
-                    alt=""
-                    loading="lazy"
-                  /><small v-else>{{ id }}</small></span
-                >
-              </div>
-              <div class="match-time">
-                <strong
-                  >{{ Math.floor(match.duration / 60) }}:{{
-                    String(match.duration % 60).padStart(2, "0")
-                  }}</strong
-                ><small>{{ date(match.date) }}</small>
-              </div>
-              <ChevronRight :size="16" />
-            </button>
-            <div v-if="!historyPage.matches.length" class="empty-state tall">
-              <History :size="30" />
-              <h3>暂无可展示的战绩</h3>
-              <p>该查询窗口没有公开对局记录。</p>
-            </div>
-            <button
-              v-if="historyPage.hasMore"
-              class="button secondary load-more"
-              :disabled="busy.history"
-              @click="loadHistory(true)"
-            >
-              {{ busy.history ? "正在读取…" : "加载更多对局" }}
-            </button>
-          </div>
-          <div
-            v-if="!historyPage && !busy.history && !errors.history"
-            class="panel empty-state tall"
-          >
-            <History :size="35" :stroke-width="1.2" />
-            <h3>从最近一场开始</h3>
-            <p>查询自己或同区玩家，查看真实对局记录。</p>
-            <button class="button primary" @click="showMyHistory">
-              查看我的战绩
-            </button>
-          </div>
-        </template>
+        <HistoryWorkspace
+          v-if="page === 'history'"
+          ref="historyWorkspace"
+          :state="state"
+          :catalog="catalog"
+          :initial-player="historyTarget"
+        />
 
         <template v-if="page === 'champion' || page === 'hex'">
           <div class="filters">
@@ -1801,6 +1664,44 @@ onUnmounted(() => {
         </template>
 
         <template v-if="page === 'settings'">
+          <section class="panel settings-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>客户端双弹窗</h2>
+                <p>快速换英雄与英雄信息分开展示</p>
+              </div>
+              <Users :size="20" class="gold-icon" />
+            </div>
+            <div class="setting-row">
+              <div>
+                <strong>自动显示选人弹窗</strong>
+                <p>客户端连接后显示匹配状态，进入游戏自动收起。</p>
+              </div>
+              <button
+                class="switch"
+                :class="{ on: settings.companionWindows !== false }"
+                role="switch"
+                :aria-checked="settings.companionWindows !== false"
+                aria-label="客户端双弹窗"
+                @click="
+                  save({
+                    companionWindows: settings.companionWindows === false,
+                  })
+                "
+              >
+                <span></span>
+              </button>
+            </div>
+            <div class="setting-row">
+              <div>
+                <strong>重新打开两个小窗</strong>
+                <p>支持拖动。备选席可直接换用，普通选人不会自动锁定。</p>
+              </div>
+              <button class="button secondary" @click="showCompanionWindows">
+                打开双弹窗<ArrowUpRight :size="14" />
+              </button>
+            </div>
+          </section>
           <section class="panel settings-panel">
             <div class="panel-heading">
               <div>

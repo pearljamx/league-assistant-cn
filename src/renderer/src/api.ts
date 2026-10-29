@@ -34,6 +34,7 @@ const settings: Settings = {
   autoRecognize: false,
   monitor: 0,
   overlay: true,
+  companionWindows: true,
   managedRunePage: null,
 };
 const preview: AssistantApi = {
@@ -48,6 +49,33 @@ const preview: AssistantApi = {
     ok: true,
     data: { members: [], bench: [], localCellId: null, championId: null },
   }),
+  getChampionChoices: async () => ({
+    ok: true,
+    data: {
+      championIds: [],
+      kind: "none",
+      reason: "请使用桌面版连接国服客户端",
+    },
+  }),
+  getLiveGame: async () => ({
+    ok: true,
+    data: {
+      status: "idle",
+      mode: "rift",
+      phase: "None",
+      gameTime: null,
+      players: [],
+      message: "请使用桌面版连接国服客户端",
+      updatedAt: "",
+    },
+  }),
+  chooseChampion: unavailable,
+  getCompanionState: async () => ({
+    ok: true,
+    data: { championId: null, followingClient: true },
+  }),
+  selectCompanionChampion: unavailable,
+  companionWindow: unavailable,
   getOverview: unavailable,
   getRecommendation: unavailable,
   getAugments: unavailable,
@@ -88,8 +116,10 @@ const preview: AssistantApi = {
     data: [{ id: 0, name: "自动跟随游戏窗口", width: 0, height: 0 }],
   }),
   onState: () => () => {},
+  onSelection: () => () => {},
   onSettings: () => () => {},
   onRecognition: () => () => {},
+  onCompanionState: () => () => {},
 };
 export const api = window.assistant ?? preview;
 export async function unwrap<T>(request: Promise<Result<T>>): Promise<T> {

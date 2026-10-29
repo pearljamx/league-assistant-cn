@@ -1,7 +1,7 @@
 {
   "name": "league-assistant-cn",
   "productName": "英雄联盟助手",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "面向国服的独立英雄联盟桌面助手",
   "author": "League Assistant CN contributors",
   "license": "MIT",
@@ -30,6 +30,8 @@
     "verify:statistics": "tsx scripts/verify-statistics.ts",
     "test:desktop": "node scripts/smoke-electron.mjs",
     "test:renderer": "node scripts/smoke-renderer.mjs",
+    "test:companions": "node scripts/smoke-companions.mjs",
+    "test:history": "node scripts/smoke-history.mjs",
     "test:portable": "node scripts/smoke-portable.mjs",
     "ocr:test": ".venv-ocr\\Scripts\\python.exe -m unittest discover -s worker/tests -v",
     "ocr:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-ocr.ps1"

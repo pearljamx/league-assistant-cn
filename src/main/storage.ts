@@ -13,6 +13,7 @@ export const defaults: Settings = {
   autoRecognize: false,
   monitor: 0,
   overlay: true,
+  companionWindows: true,
   managedRunePage: null,
 };
 export class Storage {
@@ -91,7 +92,12 @@ export function validateSettings(
   base: Settings,
 ): Settings {
   const next = { ...base };
-  for (const key of ["autoAccept", "autoRecognize", "overlay"] as const)
+  for (const key of [
+    "autoAccept",
+    "autoRecognize",
+    "overlay",
+    "companionWindows",
+  ] as const)
     if (typeof patch[key] === "boolean") next[key] = patch[key]!;
   if (
     typeof patch.acceptDelayMs === "number" &&

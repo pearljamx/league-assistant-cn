@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readdir, writeFile } from "node:fs/promises";
-const files = (await readdir("dist"))
-  .filter((name) => /\.(exe|zip)$/.test(name))
-  .sort();
+import { readFile, writeFile } from "node:fs/promises";
+const { version } = JSON.parse(await readFile("package.json", "utf8"));
+const files = ["Portable", "Setup"].map(
+  (kind) => `LeagueAssistantCN-${version}-x64-${kind}.exe`,
+);
 const lines = [];
 for (const name of files) {
   const hash = createHash("sha256");

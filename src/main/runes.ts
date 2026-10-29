@@ -53,8 +53,29 @@ export class RuneService {
     try {
       const puuid = this.client.state.summoner?.puuid;
       const phase = this.client.state.phase;
-      if (!puuid || !["None", "Lobby", "ChampSelect"].includes(phase))
+      const platform = this.client.state.platform;
+      const sessionGeneration = this.client.sessionGeneration;
+      if (
+        !puuid ||
+        this.client.state.status !== "connected" ||
+        !["None", "Lobby", "ChampSelect"].includes(phase)
+      )
         throw new AppError("请在大厅或选人阶段应用符文。", "INVALID_PHASE");
+      const assertSession = () => {
+        if (
+          this.client.state.status !== "connected" ||
+          this.client.state.summoner?.puuid !== puuid ||
+          this.client.state.platform !== platform ||
+          this.client.sessionGeneration !== sessionGeneration ||
+          this.client.state.phase !== phase ||
+          (phase === "ChampSelect" &&
+            this.client.state.championId !== championId)
+        )
+          throw new AppError(
+            "账号、英雄或阶段已变化，请重新确认方案。",
+            "SESSION_CHANGED",
+          );
+      };
       const rec = await this.recommendations.recommendation(championId, query);
       const option = rec.runes[index];
       if (!option)
@@ -86,22 +107,17 @@ export class RuneService {
             "RUNE_SLOTS_FULL",
           );
       }
-      if (
-        this.client.state.summoner?.puuid !== puuid ||
-        this.client.state.phase !== phase ||
-        (phase === "ChampSelect" && this.client.state.championId !== championId)
-      )
-        throw new AppError(
-          "账号、英雄或阶段已变化，请重新确认方案。",
-          "SESSION_CHANGED",
-        );
+      assertSession();
       if (managed) await this.storage.put(`rune-backup:${puuid}`, managed);
+      // Saving a backup is asynchronous too: recheck after it, immediately before writing.
+      assertSession();
       const response = await this.client.request<any>(
         managed ? `/lol-perks/v1/pages/${managed.id}` : "/lol-perks/v1/pages",
         managed ? "PUT" : "POST",
         managed ? { ...body, id: managed.id } : body,
       );
       const pageId = Number(response?.id || managed?.id);
+      assertSession();
       if (!pageId)
         throw new AppError(
           "客户端未返回页面编号，请在客户端检查应用结果。",

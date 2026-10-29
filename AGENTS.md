@@ -19,6 +19,8 @@
 - 实时换人/账号事件优先于在途轮询；异步读取缓存和网络返回后须再次核对账号与大区，不能用旧缓存掩盖会话变化或详情读取失败。
 - OCR 新帧未完成前不得复用旧三卡；变化事件按请求和上下文核对，旧子进程退出不能影响新进程。Python 测试使用 `npm run ocr:test` 指向项目 3.12 环境。
 - 主窗口手动比较与实时识别分开；跨 preload 只传普通数据，Vue 响应式对象须先复制。`npm run test:renderer` 仅用隔离模拟服务，无真实游戏写入。
+- 客户端伴随双窗分别为 #champion-picker / #champion-info；自动出现不抢焦点，进入游戏/断线隐藏。用户明确要求“直接替换”，只有点“换用”才调用本人选人/备选席接口，不锁定、不在真实客户端做自动测试写。
+- 实时/历史玩家详情仅按公开 PUUID 或完整 Riot ID 查询；不得按英雄或位置猜身份。实时列表、资料和评分的返回都核对账号/大区/阶段，旧请求不得回滚新选择。
 - Hexdata 直连等待正式接入资料；目前只提供其官方查询入口，不用其他来源的分数替代。
 - AramHex 数据 CC BY-NC 4.0，代码 MIT，许可分开；不将 Hexdata 分数直接映射到 AramHex 分组。
 - 2026-10-29 已通过国服 HN1 的本人查询、两页各 20 场及单局 10 人详情；此前出现过 503/500，回退和错误处理仍须保留。
@@ -32,6 +34,7 @@
 - `npm ci` 安装锁定依赖。
 - `npm run dev` 启动桌面开发环境。
 - `npm run typecheck` 类型检查；`npm test` 单元与集成测试。
+- `npm run test:companions` 与 `npm run test:history` 使用断网合成服务验证跨窗与玩家详情，不向真实客户端写入。
 - `npm run build:win` 构建 Windows 安装版和便携版。
 - OCR 的构建与测试见 README；运行用户无需单独安装 Python。
 - Windows 打包前运行 `npm run ocr:build`；`build:win` 会验证 OCR 健康状态、收集软件许可，生成 Setup.exe、Portable.exe 和 SHA256SUMS。
