@@ -178,6 +178,66 @@ it("新数据版本发布后重新拉取列表和全部英雄，429 时保留已
   expect(storage.files.has("champions/2.json")).toBe(true);
 });
 
+it("多个 Key 按顺序使用：第一个额度用完或失效后换下一个，Key 不写进日志", async () => {
+  const storage = memoryFiles();
+  const credits: Record<string, number> = { "key-a": 5, "key-b": 200 };
+  const used: string[] = [];
+  const fetcher = (async (url: string, init?: RequestInit) => {
+    const path = String(url).replace(api, "");
+    if (path === "/config.json") return json({ dataVersion: "16.21.3" });
+    const key = (init?.headers as Record<string, string>)["x-api-key"];
+    if (!(key in credits)) return new Response("{}", { status: 401 });
+    const cost = path.startsWith("/champions/") ? 2 : 1;
+    if (credits[key] < cost) return new Response("{}", { status: 429 });
+    credits[key] -= cost;
+    used.push(key + path);
+    const headers = { "x-credits-remaining": String(credits[key]) };
+    if (path === "/champions.json")
+      return json({ data: [{ id: 1 }, { id: 2 }, { id: 3 }] }, headers);
+    if (path === "/augments.json")
+      return json({ data: [detail(1).data.augments[0]] }, headers);
+    return json(detail(Number(path.match(/(\d+)\.json/)![1])), headers);
+  }) as typeof fetch;
+  const logs: string[] = [];
+  const result = await runSync({
+    keys: ["key-bad", "key-a", "key-b", "key-a"],
+    fetch: fetcher,
+    ...storage,
+    log: (message) => logs.push(message),
+    reserve: 0,
+    intervalMs: 0,
+  });
+  expect(result).toMatchObject({ stopped: "complete", keys: 3, pending: 0 });
+  expect(result.synced).toEqual([1, 2, 3]);
+  // key-a 剩 5：列表 1 + 强化 1 + 英雄 2 后只剩 1，不够下一个英雄，自动换 key-b。
+  expect(used).toEqual([
+    "key-a/champions.json",
+    "key-a/augments.json",
+    "key-a/champions/1.json",
+    "key-b/champions/2.json",
+    "key-b/champions/3.json",
+  ]);
+  expect(result.creditsRemaining).toBe(1 + 196);
+  expect(logs.join(" ")).toContain("第 1 个 Key 无效");
+  expect(logs.join(" ")).not.toContain("key-");
+});
+
+it("所有 Key 都 429 时停止并标明额度用完", async () => {
+  const storage = memoryFiles();
+  const fetcher = (async (url: string) =>
+    String(url).endsWith("/config.json")
+      ? json({ dataVersion: "16.21.3" })
+      : new Response("{}", { status: 429 })) as typeof fetch;
+  const result = await runSync({
+    keys: ["k1", "k2"],
+    fetch: fetcher,
+    ...storage,
+    log: () => {},
+    intervalMs: 0,
+  });
+  expect(result).toMatchObject({ stopped: "quota", synced: [] });
+});
+
 it("清单只接受固定文件名与合法摘要", () => {
   const good = {
     schema: 1,

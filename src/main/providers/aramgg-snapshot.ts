@@ -213,7 +213,10 @@ export function planChampions(
 }
 
 export interface SyncDeps {
-  key: string;
+  /** 单个 Key（兼容旧调用）；与 keys 合并去重后按顺序使用。 */
+  key?: string;
+  /** 多个 Key：前一个额度用完（429）或失效（401）后换下一个。 */
+  keys?: string[];
   fetch: typeof fetch;
   read(file: string): Promise<Uint8Array | null>;
   write(file: string, bytes: Uint8Array): Promise<void>;
@@ -221,7 +224,7 @@ export interface SyncDeps {
   log(message: string): void;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
-  /** 无法从响应头得知剩余额度时假定的每日额度。 */
+  /** 无法从响应头得知剩余额度时假定的每个 Key 每日额度。 */
   dailyBudget?: number;
   /** 保留给手动排查的额度。 */
   reserve?: number;
@@ -233,7 +236,10 @@ export interface SyncResult {
   dataVersion: string;
   synced: number[];
   pending: number;
+  /** 所有可用 Key 的剩余额度之和。 */
   creditsRemaining: number | null;
+  /** 参与本次同步的 Key 数量。 */
+  keys: number;
   stopped: "complete" | "budget" | "quota" | "error";
 }
 
@@ -246,8 +252,16 @@ export async function runSync(deps: SyncDeps): Promise<SyncResult> {
     deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const reserve = deps.reserve ?? 6;
   const interval = deps.intervalMs ?? 1100;
-  let remaining: number | null = null;
   let lastPaid = 0;
+  const pool = [
+    ...new Set(
+      [deps.key, ...(deps.keys ?? [])]
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ].map((key) => ({ key, remaining: null as number | null, dead: false }));
+  if (!pool.length) throw new Error("缺少 aramgg API Key");
+  const daily = deps.dailyBudget ?? 200;
 
   const configResponse = await deps.fetch(`${aramggApi}/config.json`, {
     headers: { Accept: "application/json" },
@@ -271,26 +285,42 @@ export async function runSync(deps: SyncDeps): Promise<SyncResult> {
       deps.log("旧清单无效，重新开始同步");
     }
 
-  const budgetLeft = (cost: number) =>
-    (remaining ?? deps.dailyBudget ?? 200) - cost >= reserve;
+  const usable = (cost: number) =>
+    pool.find(
+      (item) => !item.dead && (item.remaining ?? daily) - cost >= reserve,
+    );
   class Quota extends Error {}
-  async function paid(path: string, cost: number) {
-    if (!budgetLeft(cost)) return null;
-    const wait = lastPaid + interval - Date.now();
-    if (wait > 0) await sleep(wait);
-    lastPaid = Date.now();
-    const response = await deps.fetch(aramggApi + path, {
-      headers: { Accept: "application/json", "x-api-key": deps.key },
-    });
-    const left = Number(response.headers.get("x-credits-remaining"));
-    if (response.headers.has("x-credits-remaining") && Number.isFinite(left))
-      remaining = left;
-    else if (remaining !== null) remaining -= cost;
-    else remaining = (deps.dailyBudget ?? 200) - cost;
-    if (response.status === 429) throw new Quota();
-    if (response.status === 401) throw new Error("aramgg API Key 无效 (401)");
-    if (!response.ok) throw new Error(`${path} HTTP ${response.status}`);
-    return response.json() as Promise<any>;
+  /** 用第一个仍有额度的 Key 请求；该 Key 429/401 时停用并换下一个。日志只写序号，不写 Key。 */
+  async function paid(path: string, cost: number): Promise<any> {
+    for (;;) {
+      const slot = usable(cost);
+      if (!slot) {
+        if (pool.every((item) => item.dead)) throw new Quota();
+        return null;
+      }
+      const wait = lastPaid + interval - Date.now();
+      if (wait > 0) await sleep(wait);
+      lastPaid = Date.now();
+      const response = await deps.fetch(aramggApi + path, {
+        headers: { Accept: "application/json", "x-api-key": slot.key },
+      });
+      const left = Number(response.headers.get("x-credits-remaining"));
+      if (response.headers.has("x-credits-remaining") && Number.isFinite(left))
+        slot.remaining = left;
+      else slot.remaining = (slot.remaining ?? daily) - cost;
+      const index = pool.indexOf(slot) + 1;
+      if (response.status === 429 || response.status === 401) {
+        slot.dead = true;
+        deps.log(
+          response.status === 429
+            ? `第 ${index} 个 Key 今日额度已用完，换下一个`
+            : `第 ${index} 个 Key 无效 (401)，换下一个`,
+        );
+        continue;
+      }
+      if (!response.ok) throw new Error(`${path} HTTP ${response.status}`);
+      return response.json();
+    }
   }
 
   const manifest: SnapshotManifest = {
@@ -419,7 +449,12 @@ export async function runSync(deps: SyncDeps): Promise<SyncResult> {
     dataVersion,
     synced,
     pending,
-    creditsRemaining: remaining,
+    creditsRemaining: pool.some((item) => item.remaining !== null)
+      ? pool
+          .filter((item) => !item.dead)
+          .reduce((sum, item) => sum + (item.remaining ?? daily), 0)
+      : null,
+    keys: pool.length,
     stopped,
   };
 }

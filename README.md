@@ -123,7 +123,7 @@ OCR 只在截取区域像素完全一致时复用结果；新画面或识别失�
 
 客户端 token 只在主进程内存中使用，绝不发给统计站点、渲染进程或日志。窗口只暴露白名单操作；普通符文页和游戏程序文件不由助手修改。
 
-公共数据由仓库工作流 `.github/workflows/aramgg-sync.yml` 用仓库 Secret `ARAMGG_API_KEY` 同步，Key 不进入数据包、仓库或安装包；公开发布由仓库变量 `ARAMGG_PUBLISH` 控制，默认关闭。个人 aramgg API Key 只能在设置里写入，用 Windows 加密存储（Electron safeStorage）保存在 `local/aramgg-key.bin`，只在主进程请求时使用；界面只显示末 4 位，不写入日志、缓存、仓库或安装包。
+公共数据由仓库工作流 `.github/workflows/aramgg-sync.yml` 用仓库 Secret `ARAMGG_API_KEY`（可加 `ARAMGG_API_KEY_2`，前一个额度用完或失效时自动换下一个）同步，Key 不进入数据包、仓库或安装包；公开发布由仓库变量 `ARAMGG_PUBLISH` 控制，默认关闭。个人 aramgg API Key 只能在设置里写入，用 Windows 加密存储（Electron safeStorage）保存在 `local/aramgg-key.bin`，只在主进程请求时使用；界面只显示末 4 位，不写入日志、缓存、仓库或安装包。
 
 用户配置、战绩缓存、符文备份、玩家标记与遇到记录位于 Electron 用户数据目录（本机实测为 `%APPDATA%\英雄联盟助手\local`；改名为 PEARLJAM HEX 后仍沿用该目录，升级不丢设置），不上传、不提交仓库。可在关闭助手后删除缓存文件清理本地查询记录；保留 `settings.json` 可保留偏好与专用符文页归属。
 
