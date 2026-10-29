@@ -135,7 +135,7 @@ const date = (raw: string) =>
     hour: "2-digit",
     minute: "2-digit",
   });
-const mode = (raw: string | number) =>
+const mode = (raw: string | number, fallback?: string) =>
   ({
     2400: "海克斯大乱斗",
     450: "极地大乱斗",
@@ -149,7 +149,11 @@ const mode = (raw: string | number) =>
     hex: "海克斯大乱斗",
     aram: "极地大乱斗",
     rift: "召唤师峡谷",
-  })[raw] || String(raw || "对局");
+  })[raw] ||
+  { KIWI: "海克斯大乱斗", ARAM: "极地大乱斗", CLASSIC: "召唤师峡谷" }[
+    fallback || ""
+  ] ||
+  String(raw || "对局");
 const tier = (raw: string) =>
   ({
     IRON: "黑铁",
@@ -497,7 +501,7 @@ onUnmounted(() => {
                           : "失败"
                         : "对局"
                 }}</strong
-                ><span>{{ mode(match.queueId || match.mode) }}</span
+                ><span>{{ mode(match.queueId || match.mode, match.mode) }}</span
                 ><small>{{ date(match.date) }}</small
                 ><small>{{ duration(match.duration) }}</small>
               </div>

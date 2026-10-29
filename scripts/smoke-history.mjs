@@ -25,6 +25,8 @@ try {
   await page.locator(".nav-item").filter({ hasText: "战绩查询" }).click();
   await expect(page.locator(".history-workspace")).toBeVisible();
   await expect(page.locator(".hw-match")).toHaveCount(1);
+  await expect(page.locator(".hw-match")).toContainText("海克斯大乱斗");
+  await expect(page.locator(".hw-match")).not.toContainText("3270");
   await expect(page.locator(".hw-profile h2")).toHaveText("测试账号");
   await expect(page.locator(".hw-profile-ranks")).toContainText("黄金 II");
   report.checks.push("战绩卡片、玩家资料、段位与近期统计展示");

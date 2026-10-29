@@ -121,7 +121,7 @@ const fixturePlayers = () => [
 ];
 const fixtureMatch = () => ({
   id: "100001",
-  queueId: 2400,
+  queueId: 3270,
   mode: "KIWI",
   date: "2026-10-29T00:00:00Z",
   duration: 1200,
