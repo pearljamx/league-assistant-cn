@@ -106,6 +106,9 @@ try {
   await expect(page.locator(".aramgg-source")).toContainText(
     "aramgg 隔离测试数据",
   );
+  await expect(page.locator(".aramgg-outdated")).toContainText(
+    "旧版本 fixture.1 数据（最新 fixture.2",
+  );
   await page
     .getByRole("button", { name: "国服 AramHex 样本", exact: true })
     .click();
@@ -113,7 +116,7 @@ try {
   await expect(page.locator(".augment-row")).toHaveCount(4);
   await expect(page.locator(".comparison-card")).toHaveCount(3);
   report.checks.push(
-    "aramgg 按国服推荐顺序排序，样本不足不显示胜率；切换来源保留识别结果",
+    "aramgg 按国服推荐顺序排序，样本不足不显示胜率，标明旧版本数据；切换来源保留识别结果",
   );
   await page.evaluate(() => {
     window.rendererFixture.state({

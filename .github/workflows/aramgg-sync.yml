@@ -1,0 +1,76 @@
+name: aramgg public data
+# 定时同步 PEARLJAM HEX 公共数据包。公开发布默认关闭：仓库变量 ARAMGG_PUBLISH 设为 true 才运行。
+# Key 存为仓库 Secret ARAMGG_API_KEY；国内镜像（腾讯云 COS / 阿里云 OSS 的 S3 兼容接口）可选。
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: aramgg-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: vars.ARAMGG_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HAS_MIRROR: ${{ secrets.MIRROR_S3_BUCKET != '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      # 只需要 tsx 与源码，不下载 Electron。
+      - run: npm ci --ignore-scripts
+      - name: Restore previous snapshot
+        run: |
+          if git fetch --depth=1 origin aramgg-data; then
+            git worktree add --detach snapshot FETCH_HEAD
+          else
+            mkdir snapshot
+          fi
+      - id: sync
+        name: Sync from aramgg
+        env:
+          ARAMGG_API_KEY: ${{ secrets.ARAMGG_API_KEY }}
+          ARAMGG_DAILY_BUDGET: ${{ vars.ARAMGG_DAILY_BUDGET }}
+        run: npx tsx scripts/sync-aramgg.ts --out snapshot
+      - name: Publish to aramgg-data branch
+        if: steps.sync.outputs.changed == 'true'
+        working-directory: snapshot
+        run: |
+          rm -rf .git-tmp
+          git init -q -b aramgg-data .git-tmp
+          cp manifest.json .git-tmp/
+          if [ -f augments.json ]; then cp augments.json .git-tmp/; fi
+          if [ -d champions ]; then cp -r champions .git-tmp/; fi
+          cd .git-tmp
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "data: aramgg ${{ steps.sync.outputs.data_version }}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" aramgg-data
+      - name: Upload to China mirror
+        if: steps.sync.outputs.changed == 'true' && env.HAS_MIRROR == 'true'
+        working-directory: snapshot
+        env:
+          MIRROR_S3_BUCKET: ${{ secrets.MIRROR_S3_BUCKET }}
+          MIRROR_S3_ENDPOINT: ${{ secrets.MIRROR_S3_ENDPOINT }}
+          MIRROR_S3_PREFIX: ${{ vars.MIRROR_S3_PREFIX }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.MIRROR_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MIRROR_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.MIRROR_S3_REGION || 'us-east-1' }}
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          aws configure set default.s3.addressing_style virtual
+          target="s3://${MIRROR_S3_BUCKET}/${MIRROR_S3_PREFIX:-pearljam-hex/aramgg}"
+          # 先传数据文件，最后传清单，客户端不会读到指向缺失文件的清单。
+          aws s3 sync . "$target" --endpoint-url "$MIRROR_S3_ENDPOINT" \
+            --exclude "*" --include "champions/*" --include "augments.json" \
+            --content-type application/json --cache-control "public, max-age=86400" --only-show-errors
+          aws s3 cp manifest.json "$target/manifest.json" --endpoint-url "$MIRROR_S3_ENDPOINT" \
+            --content-type application/json --cache-control "no-cache" --only-show-errors

@@ -84,6 +84,17 @@ const aramggStatus = {
   creditsRemaining: 200,
   creditsDaily: 200,
   error: null,
+  public: {
+    available: true,
+    dataVersion: "fixture.2",
+    generatedAt: "2026-10-29T00:00:00Z",
+    current: 1,
+    synced: 2,
+    total: 2,
+    host: "fixture.invalid",
+    stale: false,
+    error: null,
+  },
 };
 const aramggRow = (id, rank, tier, winRate) => ({
   id,
@@ -104,6 +115,8 @@ const aramggChampion = (championId) => ({
     dataVersion: "fixture.1",
     date: "2026-10-29",
     stale: false,
+    latestVersion: "fixture.2",
+    via: "public",
   },
   championId,
   tier: 2,

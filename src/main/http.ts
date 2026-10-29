@@ -143,18 +143,34 @@ export function bytesRequest(
     request.end();
   });
 }
+type PublicOptions = {
+  headers?: Record<string, string>;
+  timeout?: number;
+  maxBytes?: number;
+};
 /**
  * 公开 HTTPS JSON 请求，返回数据与响应头（用于读取第三方额度信息）。
  * 走 Electron 系统代理；非 2xx 抛出带状态码的错误。
  */
 export async function publicJson<T = unknown>(
   url: string,
-  options: {
-    headers?: Record<string, string>;
-    timeout?: number;
-    maxBytes?: number;
-  } = {},
+  options: PublicOptions = {},
 ): Promise<{ data: T; headers: Headers }> {
+  const { body, headers } = await publicBytes(url, options);
+  try {
+    return {
+      data: JSON.parse(body.toString("utf8")) as T,
+      headers,
+    };
+  } catch {
+    throw new AppError("数据格式无法解析，请稍后刷新。", "INVALID_RESPONSE");
+  }
+}
+/** 公开 HTTPS 原始字节请求，供需要先校验 SHA-256 的数据包使用。 */
+export async function publicBytes(
+  url: string,
+  options: PublicOptions = {},
+): Promise<{ body: Buffer; headers: Headers }> {
   if (new URL(url).protocol !== "https:")
     throw new AppError("数据请求必须使用 HTTPS。", "INVALID_REMOTE_URL");
   const fetcher = publicFetcher ?? fetch;
@@ -181,12 +197,5 @@ export async function publicJson<T = unknown>(
   const body = Buffer.from(await response.arrayBuffer());
   if (body.length > limit)
     throw new AppError("返回的数据超过限制。", "RESPONSE_TOO_LARGE");
-  try {
-    return {
-      data: JSON.parse(body.toString("utf8")) as T,
-      headers: response.headers,
-    };
-  } catch {
-    throw new AppError("数据格式无法解析，请稍后刷新。", "INVALID_RESPONSE");
-  }
+  return { body, headers: response.headers };
 }

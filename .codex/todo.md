@@ -23,4 +23,6 @@
 - [ ] ④ 自动化：自动选择/禁用（锁定开关默认关）、自动抢备选席
 - [ ] ⑤ 工具集（选人台/客户端修复/好友观战/聊天状态签名）+ 海克斯评级与刷新提示
 - [x] 改名 PEARLJAM HEX + 品牌元素；海克斯数据默认 aramgg 官方 API（Key 加密存本机），AramHex 可选/回退
+- [x] 公共数据：同步脚本、工作流（默认关闭）、国内镜像上传、客户端读取与校验
+- [ ] 用户运行 gh secret set ARAMGG_API_KEY、设 ARAMGG_PUBLISH=true 并手动触发一次；用国内镜像时配置 MIRROR_* 后把公开地址填入 CHINA_MIRROR 再打包
 - [ ] 用户在设置中填入 aramgg Key 后实测英雄数据页、英雄推荐窗与悬浮窗的 aramgg 数据及额度显示

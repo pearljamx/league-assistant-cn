@@ -24,6 +24,7 @@ import {
   view,
 } from "./useCompanion";
 import { augmentGrades } from "../../../shared/augment-grade";
+import { outdatedNote } from "../format";
 import type {
   AramggChampion,
   AugmentRanking,
@@ -539,7 +540,10 @@ onUnmounted(() => {
         {{
           tab === "augments"
             ? useAramgg
-              ? aramgg?.source.name + " · " + (aramgg?.source.dataVersion ?? "")
+              ? aramgg?.source.name +
+                " · " +
+                (outdatedNote(aramgg!.source) ||
+                  (aramgg?.source.dataVersion ?? ""))
               : ranking?.source.name
             : recommendation?.source.name
         }}

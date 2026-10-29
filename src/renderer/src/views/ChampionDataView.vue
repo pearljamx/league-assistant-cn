@@ -27,7 +27,14 @@ import {
   settings,
   state,
 } from "../store";
-import { count, modes, percent, positions, rarityName } from "../format";
+import {
+  count,
+  modes,
+  outdatedNote,
+  percent,
+  positions,
+  rarityName,
+} from "../format";
 import SourceBadge from "../components/SourceBadge.vue";
 import ChampionIcon from "../components/ChampionIcon.vue";
 import EquipmentRow from "../components/EquipmentRow.vue";
@@ -1005,8 +1012,11 @@ defineExpose({ refresh });
                 {{ aramgg.source.dataVersion || "未提供" }} · 统计日期
                 {{ aramgg.source.date || "未提供" }} · 英雄整体胜率
                 {{ percent(aramgg.winRate) }}（腾讯国服）<span
-                  v-if="aramgg.source.stale"
+                  v-if="outdatedNote(aramgg.source)"
+                  class="aramgg-outdated"
                 >
+                  · {{ outdatedNote(aramgg.source) }}</span
+                ><span v-if="aramgg.source.stale">
                   · 网络不可用，显示上次缓存</span
                 >
               </p>

@@ -317,9 +317,36 @@ onMounted(async () => {
               <option value="aramhex">国服 AramHex 样本</option>
             </select>
           </div>
+          <div class="aramgg-key public-data">
+            <div class="aramgg-key-head">
+              <strong>PEARLJAM HEX 公共数据</strong>
+            </div>
+            <p>
+              无需 Key：由 PEARLJAM HEX 定时从 aramgg 同步，先读国内镜像、再读
+              GitHub，每个文件按 SHA-256 校验；启动时与每 30 分钟检查更新。
+            </p>
+            <p class="aramgg-key-status public-status">
+              <template v-if="aramgg?.public?.available">
+                数据版本 {{ aramgg.public.dataVersion }} · 最新
+                {{ aramgg.public.current }} / {{ aramgg.public.total }} 个英雄
+                <template v-if="aramgg.public.synced > aramgg.public.current">
+                  （其余为旧版本，轮转更新中）</template
+                >
+                · 更新于 {{ date(aramgg.public.generatedAt) }} · 来自
+                {{ aramgg.public.host
+                }}<template v-if="aramgg.public.stale">
+                  · 暂时无法联网，显示上次清单</template
+                >
+              </template>
+              <template v-else>
+                {{ aramgg?.public?.error || "公共数据暂不可用" }}；可填写个人
+                Key 或改用国服 AramHex。
+              </template>
+            </p>
+          </div>
           <div class="aramgg-key">
             <div class="aramgg-key-head">
-              <strong>aramgg 数据 API Key</strong>
+              <strong>个人 aramgg API Key（可选）</strong>
               <button
                 class="text-button"
                 @click="api.openExternal('aramgg-developer')"
@@ -328,7 +355,7 @@ onMounted(async () => {
               </button>
             </div>
             <p>
-              Key 用 Windows
+              公共数据不可用或缺少某个英雄时才使用。Key 用 Windows
               加密存储保存在本机，只在主进程使用，不会上传、写入日志或显示完整内容。免费计划每天
               200 额度，同一数据版本内已读取的英雄不再消耗。
             </p>

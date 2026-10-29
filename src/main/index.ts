@@ -39,6 +39,7 @@ import { createTray } from "./tray";
 import { PlayerStore, playerTags } from "./players";
 import { SecretStore } from "./secrets";
 import { AramggProvider } from "./providers/aramgg";
+import { AramggSources, PublicAramggProvider } from "./providers/aramgg-public";
 import type { Result } from "../shared/types";
 
 const current = dirname(fileURLToPath(import.meta.url));
@@ -170,10 +171,16 @@ else {
         rating = new SkillRatingProvider(),
         runes = new RuneService(client, storage, tencent),
         players = new PlayerStore(storage),
-        aramgg = new AramggProvider(
-          storage,
-          new SecretStore(join(app.getPath("userData"), "local")),
+        aramgg = new AramggSources(
+          new PublicAramggProvider(storage),
+          new AramggProvider(
+            storage,
+            new SecretStore(join(app.getPath("userData"), "local")),
+          ),
         );
+      // 公共数据：启动时与每 30 分钟检查一次清单。
+      void aramgg.refresh();
+      setInterval(() => void aramgg.refresh(), 30 * 60 * 1000).unref();
       recognition = new RecognitionService(
         client,
         storage,

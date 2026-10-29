@@ -225,6 +225,11 @@ export interface AramggSource {
   dataVersion: string | null;
   date: string | null;
   stale: boolean;
+  /** 公共数据包当前的最新版本；与 dataVersion 不同表示该英雄仍是旧版本数据。 */
+  latestVersion?: string | null;
+  fetchedAt?: string | null;
+  /** public：PEARLJAM HEX 公共数据；key：用户自己的 aramgg Key。 */
+  via?: "public" | "key";
 }
 export interface AramggAugment {
   id: number;
@@ -276,6 +281,20 @@ export interface AramggStatus {
   dataVersion: string | null;
   creditsRemaining: number | null;
   creditsDaily: number | null;
+  error: string | null;
+  public: PublicDataStatus | null;
+}
+/** PEARLJAM HEX 公共数据包状态（无需 Key）。 */
+export interface PublicDataStatus {
+  available: boolean;
+  dataVersion: string | null;
+  generatedAt: string | null;
+  /** 已同步为最新版本的英雄数 / 英雄总数。 */
+  current: number;
+  synced: number;
+  total: number;
+  host: string | null;
+  stale: boolean;
   error: string | null;
 }
 /** 玩家标记只保存在本机：好队友 / 需留意 / 不想再遇 / 朋友。 */

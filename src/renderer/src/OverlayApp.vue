@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import BrandMark from "./components/BrandMark.vue";
 import { api, unwrap } from "./api";
-import { count, percent, rarityName } from "./format";
+import { count, outdatedNote, percent, rarityName } from "./format";
 import type {
   AramggChampion,
   AugmentRanking,
@@ -191,7 +191,12 @@ onUnmounted(() => unsubscribe.forEach((stop) => stop()));
     </p>
     <div class="overlay-footer">
       <template v-if="aramggCards.length === 3"
-        >aramgg · {{ aramgg?.source.dataVersion || "版本未提供" }}</template
+        >aramgg ·
+        {{
+          (aramgg && outdatedNote(aramgg.source)) ||
+          aramgg?.source.dataVersion ||
+          "版本未提供"
+        }}</template
       ><template v-else
         >国服样本 ·
         {{ ranking?.source.date?.slice(0, 10) || "日期未提供" }}</template

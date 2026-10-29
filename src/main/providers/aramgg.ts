@@ -154,8 +154,12 @@ export class AramggProvider {
     private secrets: SecretStore,
   ) {}
 
+  async hasKey() {
+    return Boolean(await this.secrets.get());
+  }
   async status(): Promise<AramggStatus> {
     return {
+      public: null,
       configured: Boolean(await this.secrets.get()),
       masked: await this.secrets.masked(),
       gamePatch: this.version?.gamePatch ?? null,

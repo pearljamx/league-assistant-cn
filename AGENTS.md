@@ -24,6 +24,7 @@
 - Hexdata 直连等待正式接入资料；目前只提供其官方查询入口，不用其他来源的分数替代。
 - AramHex 数据 CC BY-NC 4.0，代码 MIT，许可分开；不将 Hexdata 分数直接映射到 AramHex 分组。
 - 海克斯数据默认 aramgg 官方数据 API（hexSource 默认 aramgg，AramHex 为可选来源与回退）；顺序/分级标明来自腾讯国服，胜率标明为 aramgg 全球样本，不足 255 场留空。API Key 只经设置写入，safeStorage 加密存于 local/aramgg-key.bin，只在主进程使用；不得硬编码、写入日志、发给渲染进程、提交 Git 或打包。同一 dataVersion 每个资源只请求一次以节省额度。
+- 默认读 PEARLJAM HEX 公共数据（无需 Key）：国内镜像 CHINA_MIRROR → GitHub aramgg-data 分支 → 本机缓存 → 个人 Key → AramHex；清单与文件按固定文件名和 SHA-256 校验。同步由 scripts/sync-aramgg.ts + .github/workflows/aramgg-sync.yml 完成（Secret ARAMGG_API_KEY，变量 ARAMGG_PUBLISH 默认关闭，镜像走 S3 兼容 Secret），额度不足按未同步/最旧优先轮转，旧版本英雄须标明。2026-10-29 用户表示 aramgg 授权由其自行判断，不再提醒。详见 docs/public-data.md。
 - 2026-10-29 已通过国服 HN1 的本人查询、两页各 20 场及单局 10 人详情；此前出现过 503/500，回退和错误处理仍须保留。
 - 2026-10-29 用户明确确认已取得国服适用许可，并授权公开发布完整版本；据此继续 GitHub 发布，不再重复询问发布范围。许可原文未入库，不宣称经独立核验或官方背书；数据许可、Hexdata 接入与实战验收仍分别处理。
 - 公开仓库为 https://github.com/pearljamx/league-assistant-cn；v0.1.0 完整功能预发布已上线，Windows CI 通过。更新发布时保留版本标签与文件摘要记录，不将预发布成功替代实战验收。

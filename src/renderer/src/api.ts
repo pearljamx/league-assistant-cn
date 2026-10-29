@@ -133,6 +133,7 @@ const preview: AssistantApi = {
       dataVersion: null,
       creditsRemaining: null,
       creditsDaily: null,
+      public: null,
       error: null,
     },
   }),

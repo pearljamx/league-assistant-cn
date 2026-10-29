@@ -24,6 +24,16 @@ export const duration = (seconds: number | null) =>
   seconds === null
     ? "—"
     : `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+/** 公共数据轮转更新时，标明该英雄仍是旧版本数据。 */
+export const outdatedNote = (source: {
+  dataVersion: string | null;
+  latestVersion?: string | null;
+}) =>
+  source.latestVersion &&
+  source.dataVersion &&
+  source.latestVersion !== source.dataVersion
+    ? `旧版本 ${source.dataVersion} 数据（最新 ${source.latestVersion}，轮转更新中）`
+    : "";
 export const rarityName = (raw: string) =>
   ({ silver: "白银", gold: "黄金", prismatic: "棱彩" })[raw] || raw;
 export const tierName = (tier: string) =>
