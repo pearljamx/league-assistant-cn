@@ -225,8 +225,10 @@ export interface Settings {
   monitor: number;
   overlay: boolean;
   companionWindows?: boolean;
+  closeAction?: CloseAction;
   managedRunePage: { id: number; puuid: string } | null;
 }
+export type CloseAction = "ask" | "tray" | "quit";
 export interface SkillRating {
   provider: "hexdata";
   status: "ready" | "error" | "unavailable" | "needs-authorization";
@@ -308,6 +310,8 @@ export interface AssistantApi {
   getDisplays(): Promise<
     Result<{ id: number; name: string; width: number; height: number }[]>
   >;
+  mainWindow(action: "tray" | "quit"): Promise<Result<void>>;
+  onCloseRequest(callback: () => void): () => void;
   onState(callback: (state: ConnectionState) => void): () => void;
   onSelection(callback: (selection: Selection) => void): () => void;
   onSettings(callback: (settings: Settings) => void): () => void;

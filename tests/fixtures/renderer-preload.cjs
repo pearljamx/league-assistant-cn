@@ -318,6 +318,8 @@ const api = {
   },
   openExternal: unavailable,
   scanAugments: unavailable,
+  mainWindow: (action) => remote("window", "main:" + action),
+  onCloseRequest: () => () => {},
   onState: subscribe("state"),
   onSettings: subscribe("settings"),
   onRecognition: subscribe("recognition"),

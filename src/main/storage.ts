@@ -14,6 +14,7 @@ export const defaults: Settings = {
   monitor: 0,
   overlay: true,
   companionWindows: true,
+  closeAction: "ask",
   managedRunePage: null,
 };
 export class Storage {
@@ -109,6 +110,8 @@ export function validateSettings(
     );
   if (["all", "casual", "mid", "high"].includes(patch.band ?? ""))
     next.band = patch.band!;
+  if (["ask", "tray", "quit"].includes(patch.closeAction ?? ""))
+    next.closeAction = patch.closeAction!;
   if (["rift", "aram", "hex"].includes(patch.mode ?? ""))
     next.mode = patch.mode!;
   if (

@@ -36,10 +36,13 @@ const api: AssistantApi = {
   scanAugments: () => invoke("scan"),
   setManualAugments: (ids) => invoke("manual", ids),
   getDisplays: () => invoke("displays"),
+  mainWindow: (action) => invoke("main-window", action),
   onState: (callback) => subscribe("assistant:state", callback),
   onSelection: (callback) => subscribe("assistant:selection", callback),
   onSettings: (callback) => subscribe("assistant:settings", callback),
   onRecognition: (callback) => subscribe("assistant:recognition", callback),
   onCompanionState: (callback) => subscribe("assistant:companion", callback),
+  onCloseRequest: (callback) =>
+    subscribe("assistant:close-request", () => callback()),
 };
 contextBridge.exposeInMainWorld("assistant", api);

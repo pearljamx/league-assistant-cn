@@ -20,7 +20,8 @@ try {
   page = await application.firstWindow();
   page.on("pageerror", (error) => report.errors.push(error.message));
   await page.locator(".main-workspace").waitFor();
-  await page.locator(".nav-item").filter({ hasText: "海克斯排行" }).click();
+  await page.getByRole("button", { name: "英雄数据", exact: true }).click();
+  await page.getByRole("tab", { name: "海克斯强化", exact: true }).click();
   await expect(page.locator(".augment-row")).toHaveCount(4);
   async function compare() {
     if (!(await page.locator(".manual-panel").isVisible()))
@@ -69,7 +70,9 @@ try {
     .click();
   await page.evaluate(() => window.rendererFixture.delayManual(200));
   await page.getByRole("button", { name: "比较", exact: true }).click();
-  await page.locator(".hero-picker > select").selectOption("22");
+  await page
+    .getByRole("button", { name: "选择英雄 测试英雄二", exact: true })
+    .click();
   await page.waitForTimeout(300);
   await expect(
     page.locator(".recognition-status").filter({ hasText: "手动比较" }),
@@ -84,8 +87,10 @@ try {
     });
     return window.assistant.saveSettings({ mode: "rift" });
   });
-  await page.locator(".nav-item").filter({ hasText: "英雄推荐" }).click();
-  await page.locator(".hero-picker > select").selectOption("202");
+  await page.getByRole("button", { name: "英雄数据", exact: true }).click();
+  await page
+    .getByRole("button", { name: "选择英雄 测试英雄一", exact: true })
+    .click();
   await page.locator(".rune-option button").first().click();
   await expect(page.locator(".rune-preview-grid > div")).toHaveCount(9);
   await page.getByRole("button", { name: "确认应用符文", exact: true }).click();

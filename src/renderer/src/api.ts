@@ -35,6 +35,7 @@ const settings: Settings = {
   monitor: 0,
   overlay: true,
   companionWindows: true,
+  closeAction: "ask",
   managedRunePage: null,
 };
 const preview: AssistantApi = {
@@ -115,6 +116,8 @@ const preview: AssistantApi = {
     ok: true,
     data: [{ id: 0, name: "自动跟随游戏窗口", width: 0, height: 0 }],
   }),
+  mainWindow: unavailable,
+  onCloseRequest: () => () => {},
   onState: () => () => {},
   onSelection: () => () => {},
   onSettings: () => () => {},

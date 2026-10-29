@@ -38,7 +38,7 @@ try {
   const page = browser
     .contexts()
     .flatMap((context) => context.pages())
-    .find((page) => !page.url().includes("#overlay"));
+    .find((page) => !new URL(page.url()).hash);
   assert(page, "Portable main window missing");
   await page.locator(".main-workspace").waitFor();
   let connection;

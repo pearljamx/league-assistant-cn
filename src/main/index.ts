@@ -27,6 +27,7 @@ import {
   type CompanionRole,
 } from "./companions";
 import { setPublicFetcher } from "./http";
+import { createTray } from "./tray";
 import type { Result } from "../shared/types";
 
 const current = dirname(fileURLToPath(import.meta.url));
@@ -36,6 +37,13 @@ let mainWindow: BrowserWindow | null = null,
   pickerWindow: BrowserWindow | null = null,
   infoWindow: BrowserWindow | null = null;
 let quitting = false;
+let tray: ReturnType<typeof createTray> | null = null;
+const showMain = () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+};
 const ownedWindows = () =>
   [mainWindow, overlay, pickerWindow, infoWindow].filter(
     (window): window is BrowserWindow =>
@@ -45,10 +53,7 @@ let client: Client, recognition: RecognitionService;
 const single = app.requestSingleInstanceLock();
 if (!single) app.quit();
 else {
-  app.on("second-instance", () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-  });
+  app.on("second-instance", showMain);
   void app
     .whenReady()
     .then(async () => {
@@ -106,6 +111,7 @@ else {
           monitor: z.number().int().min(0).max(15).optional(),
           overlay: z.boolean().optional(),
           companionWindows: z.boolean().optional(),
+          closeAction: z.enum(["ask", "tray", "quit"]).optional(),
         })
         .strict();
       function handle(
@@ -156,6 +162,7 @@ else {
         client.updateAutomation();
         recognition.settingsChanged();
         broadcast("assistant:settings", settings);
+        tray?.update(settings);
         updateOverlay();
         updateCompanionWindows();
         return settings;
@@ -201,8 +208,7 @@ else {
         async (value, senderId) => {
           const action = z.enum(["hide", "show", "main"]).parse(value);
           if (action === "main") {
-            mainWindow?.show();
-            mainWindow?.focus();
+            showMain();
             return;
           }
           if (action === "show") {
@@ -211,6 +217,7 @@ else {
                 companionWindows: true,
               });
               broadcast("assistant:settings", settings);
+              tray?.update(settings);
             }
             companions.reopen();
           } else {
@@ -295,6 +302,13 @@ else {
         recognition.manual(z.array(hero).length(3).parse(value)),
       );
       handle("displays", () => recognition.displays());
+      handle("main-window", (value) => {
+        const action = z.enum(["tray", "quit"]).parse(value);
+        if (action === "quit") {
+          quitting = true;
+          app.quit();
+        } else mainWindow?.hide();
+      });
       const preload = join(current, "../preload/index.cjs");
       const webPreferences = {
         preload,
@@ -312,10 +326,32 @@ else {
         title: "英雄联盟助手",
         icon: join(root, "resources/icon.png"),
         autoHideMenuBar: true,
+        // 自定义标题栏：保留 Windows 原生最小化/最大化/关闭按钮与贴靠布局。
+        titleBarStyle: "hidden",
+        titleBarOverlay: {
+          color: "#0f171a",
+          symbolColor: "#a9b6b9",
+          height: 40,
+        },
         show: false,
         webPreferences,
       });
       mainWindow.on("ready-to-show", () => mainWindow?.show());
+      mainWindow.on("close", (event) => {
+        if (quitting) return;
+        const action = storage.getSettings().closeAction ?? "ask";
+        if (action === "quit") return;
+        event.preventDefault();
+        if (action === "tray") mainWindow?.hide();
+        else {
+          showMain();
+          mainWindow?.webContents.send("assistant:close-request");
+        }
+      });
+      // Windows 注销/关机时直接退出，不弹关闭询问。
+      mainWindow.on("session-end", () => {
+        quitting = true;
+      });
       mainWindow.on("closed", () => {
         mainWindow = null;
         app.quit();
@@ -393,6 +429,34 @@ else {
           hash: "champion-info",
         });
       }
+      const toggleSetting = async (key: "autoAccept" | "companionWindows") => {
+        const current = storage.getSettings();
+        const settings = await storage.updateSettings({
+          [key]:
+            key === "companionWindows"
+              ? current.companionWindows === false
+              : !current.autoAccept,
+        });
+        client.updateAutomation();
+        broadcast("assistant:settings", settings);
+        tray?.update(settings);
+        updateCompanionWindows();
+      };
+      tray = createTray(
+        join(root, "resources/icon.png"),
+        storage.getSettings(),
+        {
+          show: showMain,
+          toggleAutoAccept: () =>
+            void toggleSetting("autoAccept").catch(() => {}),
+          toggleCompanions: () =>
+            void toggleSetting("companionWindows").catch(() => {}),
+          quit: () => {
+            quitting = true;
+            app.quit();
+          },
+        },
+      );
       const broadcast = (event: string, data: unknown) => {
         for (const window of ownedWindows())
           window.webContents.send(event, data);
@@ -468,7 +532,7 @@ else {
       });
       recognition.start();
       void client.start();
-      app.on("activate", () => mainWindow?.show());
+      app.on("activate", showMain);
     })
     .catch(() => {
       app.quit();
@@ -477,6 +541,7 @@ else {
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", () => {
   quitting = true;
+  tray?.destroy();
   client?.stop();
   recognition?.stop();
   globalShortcut.unregisterAll();

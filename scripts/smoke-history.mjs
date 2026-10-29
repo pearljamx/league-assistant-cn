@@ -22,7 +22,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   page.on("pageerror", (error) => report.errors.push(error.message));
   await page.locator(".main-workspace").waitFor();
-  await page.locator(".nav-item").filter({ hasText: "战绩查询" }).click();
+  await page.getByRole("button", { name: "战绩查询", exact: true }).click();
   await expect(page.locator(".history-workspace")).toBeVisible();
   await expect(page.locator(".hw-match")).toHaveCount(1);
   await expect(page.locator(".hw-match")).toContainText("海克斯大乱斗");
@@ -53,8 +53,8 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   report.checks.push("小屏隐藏卡片成员时仍可从单局详情查询玩家");
   report.checks.push("历史战绩参与者及单局详情参与者可打开玩家资料");
-  await page.getByRole("tab", { name: "实时对局", exact: true }).click();
-  await expect(page.locator(".hw-live-team")).toHaveCount(2);
+  await page.getByRole("button", { name: "实时对局", exact: true }).click();
+  await expect(page.locator(".live-team")).toHaveCount(2);
   await expect(
     page.getByRole("button", { name: "身份隐藏，无法查询", exact: true }),
   ).toBeDisabled();
@@ -63,19 +63,22 @@ try {
     .click();
   await expect(page.locator(".hw-profile h2")).toHaveText("测试队友");
   report.checks.push("实时双队展示，公开玩家可查询，隐藏身份禁用查询");
+  await page.getByRole("button", { name: "实时对局", exact: true }).click();
   await page.screenshot({
     path: "artifacts/screenshots/history-live-fixture.png",
   });
-  await page.getByRole("tab", { name: "对局记录", exact: true }).click();
+  await page.getByRole("button", { name: "战绩查询", exact: true }).click();
   await page.getByRole("button", { name: "返回我的战绩", exact: true }).click();
   await expect(page.locator(".hw-profile h2")).toHaveText("测试账号");
+  await page.getByRole("button", { name: "搜索召唤师", exact: true }).click();
   await page
     .getByRole("textbox", { name: "查询玩家 Riot ID", exact: true })
     .fill("测试对手#TEST");
   await page
-    .locator(".hw-search")
+    .locator(".search-pane")
     .getByRole("button", { name: "查询", exact: true })
     .click();
+  await expect(page.locator(".search-pane")).toHaveCount(0);
   await expect(page.locator(".hw-profile h2")).toHaveText("测试对手");
   await expect(page.locator(".hw-profile-tag")).toContainText("Lv.88");
   report.checks.push("搜索同区 Riot ID 与返回本人战绩");

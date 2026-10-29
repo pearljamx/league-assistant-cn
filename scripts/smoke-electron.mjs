@@ -21,9 +21,7 @@ try {
   await application.firstWindow();
   await new Promise((resolve) => setTimeout(resolve, 1500));
   const page =
-    application
-      .windows()
-      .find((window) => !window.url().includes("#overlay")) ??
+    application.windows().find((window) => !new URL(window.url()).hash) ??
     (await application.firstWindow());
   console.log(
     "desktop-windows",
@@ -70,9 +68,12 @@ try {
   });
   report.checks.push({ name: "英雄与装备资料", ...catalog });
   await page.screenshot({ path: directory + "/dashboard.png", fullPage: true });
-  await page.locator(".nav-item").filter({ hasText: "英雄推荐" }).click();
+  await page.getByRole("button", { name: "英雄数据", exact: true }).click();
   if (catalog.ok && catalog.heroes > 0) {
-    await page.locator(".hero-picker > select").selectOption("202");
+    await page
+      .getByRole("textbox", { name: "搜索英雄", exact: true })
+      .fill("Jhin");
+    await page.locator(".hero-rank-row").first().click();
     await page.locator(".champion-heading").waitFor();
     await page.waitForFunction(
       () => !document.querySelector(".loading-state.tall"),
@@ -94,7 +95,9 @@ try {
         realClientWrite: false,
       });
     }
-    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.evaluate(() =>
+      document.querySelector(".page-body")?.scrollTo(0, 0),
+    );
     await page.waitForTimeout(1500);
     await page.screenshot({
       path: directory + "/recommendation.png",
@@ -109,7 +112,8 @@ try {
   });
   assert.equal(invalid.ok, false);
   report.checks.push({ name: "拒绝越界设置", ...invalid });
-  await page.locator(".nav-item").filter({ hasText: "海克斯排行" }).click();
+  await page.getByRole("button", { name: "海克斯大乱斗", exact: true }).click();
+  await page.getByRole("tab", { name: "海克斯强化", exact: true }).click();
   await page.waitForFunction(
     () => !document.querySelector(".loading-state.tall"),
     { timeout: 60000 },
@@ -123,8 +127,10 @@ try {
     path: directory + "/hex-ranking.png",
     fullPage: true,
   });
-  await page.locator(".nav-item").filter({ hasText: "设置" }).click();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("dialog", { name: "设置" }).waitFor();
   await page.screenshot({ path: directory + "/settings.png", fullPage: true });
+  await page.getByRole("button", { name: "关闭设置", exact: true }).click();
   await writeFile(
     "artifacts/desktop-smoke.json",
     JSON.stringify(report, null, 2),
@@ -157,7 +163,7 @@ try {
 } finally {
   const main = application
     .windows()
-    .find((window) => !window.url().includes("#overlay"));
+    .find((window) => !new URL(window.url()).hash);
   if (main && originalFilters)
     await main
       .evaluate(

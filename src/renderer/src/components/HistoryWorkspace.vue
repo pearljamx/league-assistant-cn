@@ -6,56 +6,41 @@ import {
   ChevronRight,
   CircleAlert,
   History,
-  Radio,
   RefreshCw,
-  Search,
   ShieldCheck,
-  Swords,
-  Users,
-  X,
 } from "@lucide/vue";
 import { api, unwrap } from "../api";
 import ChampionIcon from "./ChampionIcon.vue";
+import type { PlayerTarget } from "../store";
 import type {
   Catalog,
   ConnectionState,
-  LiveGame,
-  LivePlayer,
   Match,
   MatchPage,
   MatchPlayer,
   RankedEntry,
   SkillRating,
-  Summoner,
 } from "../../../shared/types";
 
 const props = defineProps<{
   state: ConnectionState;
   catalog: Catalog;
-  initialPlayer?: Summoner | null;
+  request?: (PlayerTarget & { nonce: number }) | null;
 }>();
-type PlayerTarget = { puuid: string; name: string; level: number | null };
-const tab = ref<"history" | "live">("history");
-const search = ref("");
 const target = ref<PlayerTarget | null>(null);
 const history = ref<MatchPage | null>(null);
 const ranked = ref<RankedEntry[]>([]);
 const rating = ref<SkillRating | null>(null);
-const live = ref<LiveGame | null>(null);
 const detail = ref<Match | null>(null);
 const detailId = ref<string | null>(null);
-const busy = ref({ history: false, search: false, live: false, detail: false });
+const busy = ref({ history: false, detail: false });
 const errors = ref({
   history: "",
-  search: "",
   ranked: "",
-  live: "",
   detail: "",
 });
 let playerEpoch = 0,
-  liveEpoch = 0,
   detailEpoch = 0;
-let timer: ReturnType<typeof setInterval> | undefined;
 const champions = computed(
   () => new Map(props.catalog.champions.map((hero) => [hero.id, hero])),
 );
@@ -109,15 +94,7 @@ const heroSummary = computed(() => {
   }
   return [...rows.values()].sort((a, b) => b.games - a.games).slice(0, 4);
 });
-const teams = computed(() =>
-  [...new Set(live.value?.players.map((player) => player.teamId) ?? [])].map(
-    (id) => ({
-      id,
-      players: live.value!.players.filter((player) => player.teamId === id),
-    }),
-  ),
-);
-const kda = (player: MatchPlayer | LivePlayer) =>
+const kda = (player: MatchPlayer) =>
   [player.kills, player.deaths, player.assists]
     .map((value) => (value === null ? "—" : value))
     .join(" / ");
@@ -169,9 +146,6 @@ const tier = (raw: string) =>
   })[raw] || "未定级";
 const currentContext = () =>
   `${props.state.status}:${props.state.platform}:${props.state.summoner?.puuid}`;
-const isPublic = (player: LivePlayer) =>
-  !player.identityHidden &&
-  Boolean(player.puuid || player.riotId?.includes("#"));
 function clearPlayer() {
   playerEpoch++;
   detailEpoch++;
@@ -182,15 +156,8 @@ function clearPlayer() {
   detail.value = null;
   detailId.value = null;
   busy.value.history = false;
-  busy.value.search = false;
   busy.value.detail = false;
-  errors.value = {
-    ...errors.value,
-    history: "",
-    search: "",
-    ranked: "",
-    detail: "",
-  };
+  errors.value = { history: "", ranked: "", detail: "" };
 }
 async function loadPlayer(value: PlayerTarget, more = false) {
   const epoch = ++playerEpoch,
@@ -198,7 +165,6 @@ async function loadPlayer(value: PlayerTarget, more = false) {
   target.value = value;
   busy.value.history = true;
   errors.value.history = "";
-  errors.value.search = "";
   if (!more) {
     history.value = null;
     ranked.value = [];
@@ -260,60 +226,13 @@ async function showOwn() {
     errors.value.history = "请先连接并登录国服客户端。";
   }
 }
-async function searchPlayer() {
-  if (!search.value.trim()) return;
-  const epoch = ++playerEpoch,
-    context = currentContext();
-  busy.value.search = true;
-  errors.value.search = "";
-  try {
-    const player = await unwrap(api.findSummoner(search.value.trim()));
-    if (epoch !== playerEpoch || context !== currentContext()) return;
-    await loadPlayer({
-      puuid: player.puuid,
-      name: player.gameName + (player.tagLine ? "#" + player.tagLine : ""),
-      level: player.level,
-    });
-  } catch (error) {
-    if (epoch === playerEpoch && context === currentContext())
-      errors.value.search = (error as Error).message;
-  } finally {
-    if (context === currentContext()) busy.value.search = false;
-  }
-}
-async function viewPlayer(player: MatchPlayer | LivePlayer) {
-  if ("identityHidden" in player && player.identityHidden) return;
-  const name = "riotId" in player ? player.riotId : player.name;
-  if (player.puuid) {
-    await loadPlayer({
-      puuid: player.puuid,
-      name: name || "公开玩家",
-      level: null,
-    });
-    return;
-  }
-  if (!name?.includes("#")) return;
-  search.value = name;
-  await searchPlayer();
-}
-async function loadLive() {
-  if (busy.value.live) return;
-  const epoch = ++liveEpoch,
-    context = currentContext();
-  busy.value.live = true;
-  errors.value.live = "";
-  try {
-    const result = await unwrap(api.getLiveGame());
-    if (epoch === liveEpoch && context === currentContext())
-      live.value = result;
-  } catch (error) {
-    if (epoch === liveEpoch && context === currentContext()) {
-      live.value = null;
-      errors.value.live = (error as Error).message;
-    }
-  } finally {
-    if (epoch === liveEpoch) busy.value.live = false;
-  }
+async function viewPlayer(player: MatchPlayer) {
+  if (!player.puuid) return;
+  await loadPlayer({
+    puuid: player.puuid,
+    name: player.name || "公开玩家",
+    level: null,
+  });
 }
 async function openMatch(match: Match) {
   if (detailId.value === match.id) {
@@ -340,8 +259,7 @@ async function openMatch(match: Match) {
   }
 }
 function refresh() {
-  if (tab.value === "live") void loadLive();
-  else if (target.value) void loadPlayer(target.value);
+  if (target.value) void loadPlayer(target.value);
   else void showOwn();
 }
 defineExpose({ refresh, showOwn });
@@ -349,358 +267,205 @@ watch(
   () => [props.state.summoner?.puuid, props.state.platform, props.state.status],
   () => {
     clearPlayer();
-    liveEpoch++;
-    live.value = null;
-    busy.value.live = false;
-    if (props.state.status === "connected") {
-      void showOwn();
-      void loadLive();
-    }
+    if (props.state.status === "connected") void showOwn();
   },
 );
+function openRequest() {
+  if (!props.request) return false;
+  const { nonce: _nonce, ...player } = props.request;
+  void loadPlayer(player);
+  return true;
+}
 watch(
-  () => `${props.state.phase}:${props.state.mode}:${props.state.championId}`,
-  () => {
-    liveEpoch++;
-    live.value = null;
-    busy.value.live = false;
-    void loadLive();
-  },
-);
-watch(tab, (value) => {
-  if (value === "live") void loadLive();
-});
-watch(
-  () => props.initialPlayer,
-  (player) => {
-    if (player)
-      void loadPlayer({
-        puuid: player.puuid,
-        name: player.gameName + (player.tagLine ? "#" + player.tagLine : ""),
-        level: player.level,
-      });
-  },
+  () => props.request?.nonce,
+  () => openRequest(),
 );
 onMounted(() => {
-  if (props.initialPlayer) {
-    const player = props.initialPlayer;
-    void loadPlayer({
-      puuid: player.puuid,
-      name: player.gameName + (player.tagLine ? "#" + player.tagLine : ""),
-      level: player.level,
-    });
-  } else void showOwn();
-  void loadLive();
-  timer = setInterval(() => {
-    if (tab.value === "live") void loadLive();
-  }, 5000);
+  if (!openRequest()) void showOwn();
 });
 onUnmounted(() => {
-  clearInterval(timer);
   playerEpoch++;
-  liveEpoch++;
   detailEpoch++;
 });
 </script>
 
 <template>
   <section class="history-workspace">
-    <div class="hw-toolbar">
-      <div class="hw-tabs" role="tablist" aria-label="战绩视图">
-        <button
-          role="tab"
-          :aria-selected="tab === 'history'"
-          :class="{ active: tab === 'history' }"
-          @click="tab = 'history'"
-        >
-          <History :size="16" />对局记录
-        </button>
-        <button
-          role="tab"
-          :aria-selected="tab === 'live'"
-          :class="{ active: tab === 'live' }"
-          @click="tab = 'live'"
-        >
-          <Radio :size="16" />实时对局<span
-            v-if="live?.players.length"
-            class="live-indicator"
-          ></span>
-        </button>
-      </div>
-      <form class="hw-search" @submit.prevent="searchPlayer">
-        <Search :size="16" /><input
-          v-model="search"
-          aria-label="查询玩家 Riot ID"
-          placeholder="游戏名#标签 · 当前大区"
-        /><button type="submit" :disabled="busy.search">
-          {{ busy.search ? "查询中" : "查询" }}
-        </button>
-      </form>
-      <button class="hw-icon-button" aria-label="刷新战绩视图" @click="refresh">
-        <RefreshCw
-          :size="17"
-          :class="{ spinning: busy.history || busy.live }"
-        />
-      </button>
-    </div>
-    <div v-if="errors.search" class="hw-notice error">
-      <CircleAlert :size="16" />{{ errors.search }}
-    </div>
     <div class="hw-layout">
       <main class="hw-content">
-        <template v-if="tab === 'history'">
-          <div class="hw-list-heading">
-            <div>
-              <span class="hw-kicker">MATCH HISTORY</span>
-              <h2>
-                {{ viewingOwn ? "我的近期对局" : target?.name || "近期对局" }}
-              </h2>
-            </div>
-            <span>{{ history?.matches.length ?? 0 }} 场记录</span>
+        <div class="hw-list-heading">
+          <div>
+            <span class="hw-kicker">MATCH HISTORY</span>
+            <h2>
+              {{ viewingOwn ? "我的近期对局" : target?.name || "近期对局" }}
+            </h2>
           </div>
-          <div v-if="history?.warning" class="hw-notice">
-            <CircleAlert :size="16" /><span
-              >{{ history.warning }} · {{ date(history.fetchedAt) }}</span
+          <span class="hw-list-count"
+            >{{ history?.matches.length ?? 0 }} 场记录<button
+              class="hw-icon-button"
+              aria-label="刷新战绩视图"
+              @click="refresh"
             >
-          </div>
-          <div v-if="errors.history" class="hw-empty">
-            <CircleAlert :size="26" />
-            <h3>战绩暂未读取成功</h3>
-            <p>{{ errors.history }}</p>
-            <button @click="refresh">重新读取</button>
-          </div>
-          <div v-else-if="busy.history && !history" class="hw-empty">
-            <RefreshCw class="spinning" :size="26" />
-            <p>正在读取国服战绩…</p>
-          </div>
-          <div v-else-if="!history?.matches.length" class="hw-empty">
-            <History :size="28" />
-            <h3>暂无对局记录</h3>
-            <p>登录客户端，或搜索同区公开玩家。</p>
-          </div>
-          <article
-            v-for="match in history?.matches ?? []"
-            :key="match.id"
-            class="hw-match"
-            :class="{
-              win: playerFor(match)?.win,
-              loss: playerFor(match) && !playerFor(match)?.win,
-              expanded: detailId === match.id,
-            }"
+              <RefreshCw
+                :size="16"
+                :class="{ spinning: busy.history }"
+              /></button
+          ></span>
+        </div>
+        <div v-if="history?.warning" class="hw-notice">
+          <CircleAlert :size="16" /><span
+            >{{ history.warning }} · {{ date(history.fetchedAt) }}</span
           >
-            <div class="hw-match-overview">
-              <div class="hw-match-result">
-                <strong>{{
-                  match.remake
-                    ? "重开"
-                    : match.private
-                      ? "隐私对局"
-                      : playerFor(match)
-                        ? playerFor(match)?.win
-                          ? "胜利"
-                          : "失败"
-                        : "对局"
-                }}</strong
-                ><span>{{ mode(match.queueId || match.mode, match.mode) }}</span
-                ><small>{{ date(match.date) }}</small
-                ><small>{{ duration(match.duration) }}</small>
-              </div>
-              <div class="hw-match-champion">
-                <ChampionIcon
-                  :champion="champions.get(playerFor(match)?.championId ?? 0)"
-                  :size="50"
-                /><span>{{
-                  champions.get(playerFor(match)?.championId ?? 0)?.name ||
-                  "未提供英雄"
-                }}</span>
-              </div>
-              <div class="hw-match-kda">
-                <strong>{{
-                  playerFor(match) ? kda(playerFor(match)!) : "—"
-                }}</strong
-                ><small>K / D / A</small
-                ><span v-if="playerFor(match)"
-                  >{{
-                    playerFor(match)!.deaths
-                      ? (
-                          (playerFor(match)!.kills +
-                            playerFor(match)!.assists) /
-                          playerFor(match)!.deaths
-                        ).toFixed(2)
-                      : "完美"
-                  }}
-                  KDA</span
-                >
-              </div>
-              <div class="hw-match-items">
-                <span
-                  v-for="(id, index) in playerFor(match)?.items ?? []"
-                  :key="index"
-                  :title="catalog.items[id]?.name || '未提供装备'"
-                  ><img
-                    v-if="id && catalog.items[id]?.icon"
-                    :src="catalog.items[id].icon"
-                    alt=""
-                  /><span v-else>{{ id ? "·" : "" }}</span></span
-                >
-              </div>
-              <div class="hw-match-players">
-                <button
-                  v-for="player in match.players.slice(0, 10)"
-                  :key="player.puuid || player.name + player.championId"
-                  :disabled="match.private || !player.puuid"
-                  :aria-label="'查看玩家 ' + player.name"
-                  :title="player.name"
-                  @click="viewPlayer(player)"
-                >
-                  <ChampionIcon
-                    :champion="champions.get(player.championId)"
-                    :size="22"
-                  /><span>{{ player.name || "身份未公开" }}</span>
-                </button>
-              </div>
-              <button
-                class="hw-match-toggle"
-                :aria-label="
-                  detailId === match.id ? '收起单局详情' : '查看单局详情'
-                "
-                :aria-expanded="detailId === match.id"
-                @click="openMatch(match)"
+        </div>
+        <div v-if="errors.history" class="hw-empty">
+          <CircleAlert :size="26" />
+          <h3>战绩暂未读取成功</h3>
+          <p>{{ errors.history }}</p>
+          <button @click="refresh">重新读取</button>
+        </div>
+        <div v-else-if="busy.history && !history" class="hw-empty">
+          <RefreshCw class="spinning" :size="26" />
+          <p>正在读取国服战绩…</p>
+        </div>
+        <div v-else-if="!history?.matches.length" class="hw-empty">
+          <History :size="28" />
+          <h3>暂无对局记录</h3>
+          <p>登录客户端，或在顶部搜索同区公开玩家。</p>
+        </div>
+        <article
+          v-for="match in history?.matches ?? []"
+          :key="match.id"
+          class="hw-match"
+          :class="{
+            win: playerFor(match)?.win,
+            loss: playerFor(match) && !playerFor(match)?.win,
+            expanded: detailId === match.id,
+          }"
+        >
+          <div class="hw-match-overview">
+            <div class="hw-match-result">
+              <strong>{{
+                match.remake
+                  ? "重开"
+                  : match.private
+                    ? "隐私对局"
+                    : playerFor(match)
+                      ? playerFor(match)?.win
+                        ? "胜利"
+                        : "失败"
+                      : "对局"
+              }}</strong
+              ><span>{{ mode(match.queueId || match.mode, match.mode) }}</span
+              ><small>{{ date(match.date) }}</small
+              ><small>{{ duration(match.duration) }}</small>
+            </div>
+            <div class="hw-match-champion">
+              <ChampionIcon
+                :champion="champions.get(playerFor(match)?.championId ?? 0)"
+                :size="50"
+              /><span>{{
+                champions.get(playerFor(match)?.championId ?? 0)?.name ||
+                "未提供英雄"
+              }}</span>
+            </div>
+            <div class="hw-match-kda">
+              <strong>{{
+                playerFor(match) ? kda(playerFor(match)!) : "—"
+              }}</strong
+              ><small>K / D / A</small
+              ><span v-if="playerFor(match)"
+                >{{
+                  playerFor(match)!.deaths
+                    ? (
+                        (playerFor(match)!.kills + playerFor(match)!.assists) /
+                        playerFor(match)!.deaths
+                      ).toFixed(2)
+                    : "完美"
+                }}
+                KDA</span
               >
-                <ChevronDown
-                  v-if="detailId === match.id"
-                  :size="18"
-                /><ChevronRight v-else :size="18" />
+            </div>
+            <div class="hw-match-items">
+              <span
+                v-for="(id, index) in playerFor(match)?.items ?? []"
+                :key="index"
+                :title="catalog.items[id]?.name || '未提供装备'"
+                ><img
+                  v-if="id && catalog.items[id]?.icon"
+                  :src="catalog.items[id].icon"
+                  alt=""
+                /><span v-else>{{ id ? "·" : "" }}</span></span
+              >
+            </div>
+            <div class="hw-match-players">
+              <button
+                v-for="player in match.players.slice(0, 10)"
+                :key="player.puuid || player.name + player.championId"
+                :disabled="match.private || !player.puuid"
+                :aria-label="'查看玩家 ' + player.name"
+                :title="player.name"
+                @click="viewPlayer(player)"
+              >
+                <ChampionIcon
+                  :champion="champions.get(player.championId)"
+                  :size="22"
+                /><span>{{ player.name || "身份未公开" }}</span>
               </button>
             </div>
-            <div v-if="detailId === match.id" class="hw-match-detail">
-              <p v-if="busy.detail">正在读取单局详情…</p>
-              <p v-else-if="errors.detail" class="error">{{ errors.detail }}</p>
-              <template v-else-if="detail"
-                ><div class="hw-detail-header">
-                  <span>玩家 / 英雄</span><span>KDA</span><span>伤害</span
-                  ><span>经济</span>
-                </div>
-                <button
-                  v-for="player in detail.players"
-                  :key="player.puuid || player.name + player.championId"
-                  class="hw-detail-player"
-                  :disabled="detail.private || !player.puuid"
-                  :aria-label="'查看详情玩家 ' + player.name"
-                  @click="viewPlayer(player)"
-                >
-                  <span
-                    ><ChampionIcon
-                      :champion="champions.get(player.championId)"
-                      :size="28"
-                    /><b>{{ player.name || "身份未公开" }}</b
-                    ><small v-if="player.puuid === state.summoner?.puuid"
-                      >我</small
-                    ></span
-                  ><span>{{ kda(player) }}</span
-                  ><span>{{ player.damage.toLocaleString("zh-CN") }}</span
-                  ><span>{{ player.gold.toLocaleString("zh-CN") }}</span>
-                </button></template
-              >
-            </div>
-          </article>
-          <button
-            v-if="history?.hasMore"
-            class="hw-load-more"
-            :disabled="busy.history"
-            @click="target && loadPlayer(target, true)"
-          >
-            {{ busy.history ? "读取中…" : "加载更多对局"
-            }}<ChevronDown :size="15" />
-          </button>
-        </template>
-        <template v-else>
-          <div class="hw-list-heading">
-            <div>
-              <span class="hw-kicker">LIVE GAME</span>
-              <h2>实时对局</h2>
-            </div>
-            <span v-if="live"
-              >{{ mode(live.mode) }}<i>·</i>{{ duration(live.gameTime) }}</span
-            >
-          </div>
-          <div class="hw-live-message">
-            <Radio :size="16" /><span>{{
-              errors.live || live?.message || "正在读取当前对局…"
-            }}</span
-            ><small>每 5 秒更新</small>
-          </div>
-          <div v-if="!live?.players.length" class="hw-empty">
-            <Users :size="30" />
-            <h3>
-              {{
-                state.phase === "ChampSelect"
-                  ? "正在同步选人信息"
-                  : "等待当前对局"
-              }}
-            </h3>
-            <p>进入选人或游戏后，自动展示公开玩家信息。</p>
-            <p>身份隐藏的玩家无法查询，不推断真实身份。</p>
-          </div>
-          <section v-for="team in teams" :key="team.id" class="hw-live-team">
-            <div class="hw-team-heading">
-              <h3>
-                {{
-                  team.id === 100
-                    ? "蓝色方"
-                    : team.id === 200
-                      ? "红色方"
-                      : "队伍 " + team.id
-                }}
-              </h3>
-              <span>{{ team.players.length }} 位玩家</span>
-            </div>
             <button
-              v-for="player in team.players"
-              :key="player.key"
-              class="hw-live-player"
-              :disabled="!isPublic(player)"
+              class="hw-match-toggle"
               :aria-label="
-                isPublic(player)
-                  ? '查看实时玩家 ' + (player.riotId || '公开玩家')
-                  : '身份隐藏，无法查询'
+                detailId === match.id ? '收起单局详情' : '查看单局详情'
               "
-              @click="viewPlayer(player)"
+              :aria-expanded="detailId === match.id"
+              @click="openMatch(match)"
             >
-              <ChampionIcon
-                :champion="champions.get(player.championId)"
-                :size="44"
-              /><span class="hw-live-identity"
-                ><b
-                  >{{
-                    player.identityHidden
-                      ? "身份未公开"
-                      : player.riotId || "公开玩家"
-                  }}<small v-if="player.isSelf">我</small></b
-                ><span
-                  >{{ champions.get(player.championId)?.name || "尚未选择英雄"
-                  }}<i v-if="player.level !== null"
-                    >· Lv.{{ player.level }}</i
-                  ></span
-                ></span
-              ><span class="hw-live-kda"
-                >{{ kda(player) }}<small>K / D / A</small></span
-              >
-              <div class="hw-live-items">
-                <img
-                  v-for="(id, index) in player.items.filter(
-                    (id) => id && catalog.items[id]?.icon,
-                  )"
-                  :key="index"
-                  :src="catalog.items[id].icon"
-                  :title="catalog.items[id].name"
-                  alt=""
-                />
-              </div>
-              <ChevronRight v-if="isPublic(player)" :size="16" />
+              <ChevronDown
+                v-if="detailId === match.id"
+                :size="18"
+              /><ChevronRight v-else :size="18" />
             </button>
-          </section>
-        </template>
+          </div>
+          <div v-if="detailId === match.id" class="hw-match-detail">
+            <p v-if="busy.detail">正在读取单局详情…</p>
+            <p v-else-if="errors.detail" class="error">{{ errors.detail }}</p>
+            <template v-else-if="detail"
+              ><div class="hw-detail-header">
+                <span>玩家 / 英雄</span><span>KDA</span><span>伤害</span
+                ><span>经济</span>
+              </div>
+              <button
+                v-for="player in detail.players"
+                :key="player.puuid || player.name + player.championId"
+                class="hw-detail-player"
+                :disabled="detail.private || !player.puuid"
+                :aria-label="'查看详情玩家 ' + player.name"
+                @click="viewPlayer(player)"
+              >
+                <span
+                  ><ChampionIcon
+                    :champion="champions.get(player.championId)"
+                    :size="28"
+                  /><b>{{ player.name || "身份未公开" }}</b
+                  ><small v-if="player.puuid === state.summoner?.puuid"
+                    >我</small
+                  ></span
+                ><span>{{ kda(player) }}</span
+                ><span>{{ player.damage.toLocaleString("zh-CN") }}</span
+                ><span>{{ player.gold.toLocaleString("zh-CN") }}</span>
+              </button></template
+            >
+          </div>
+        </article>
+        <button
+          v-if="history?.hasMore"
+          class="hw-load-more"
+          :disabled="busy.history"
+          @click="target && loadPlayer(target, true)"
+        >
+          {{ busy.history ? "读取中…" : "加载更多对局"
+          }}<ChevronDown :size="15" />
+        </button>
       </main>
       <aside class="hw-profile" aria-label="玩家详情">
         <div class="hw-profile-heading">
@@ -801,7 +566,7 @@ onUnmounted(() => {
         </div>
         <p v-if="!heroSummary.length" class="hw-muted">读取战绩后展示。</p>
         <p class="hw-profile-note">
-          点击历史或实时对局中的公开玩家，可在这里查看他的段位和近期战绩。
+          点击历史或实时对局中的公开玩家，可在这里查看其段位和近期战绩。
         </p>
       </aside>
     </div>
@@ -813,62 +578,21 @@ onUnmounted(() => {
   color: var(--text);
   font-size: 13px;
 }
-.hw-toolbar {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 22px;
-}
-.hw-tabs {
-  display: flex;
-  background: #10191d;
-  border: 1px solid var(--line-strong);
-  padding: 4px;
-  border-radius: 8px;
-  gap: 3px;
-}
-.hw-tabs button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  color: var(--muted);
-  border-radius: 5px;
-  white-space: nowrap;
-}
-.hw-tabs button.active {
-  color: var(--gold-light);
-  background: #cfb47b12;
-}
-.hw-search {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  border: 1px solid var(--line-strong);
-  padding: 0 12px;
-  border-radius: 7px;
-  background: #10191d;
-  min-height: 42px;
-  min-width: 250px;
-}
-.hw-search input {
-  background: transparent;
-  border: 0;
-  min-width: 0;
-  flex: 1;
-  padding: 9px 0;
-}
-.hw-search button {
-  color: var(--gold);
-  font-size: 12px;
-  white-space: nowrap;
-}
 .hw-icon-button {
   border: 1px solid var(--line-strong);
   border-radius: 7px;
-  padding: 10px;
+  padding: 6px;
   display: flex;
+  color: var(--secondary);
+}
+.hw-icon-button:hover {
+  color: var(--text);
+  background: #ffffff08;
+}
+.hw-list-count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .hw-layout {
   display: grid;
@@ -1070,8 +794,7 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.hw-detail-player small,
-.hw-live-identity b small {
+.hw-detail-player small {
   font-size: 9px;
   color: var(--green);
   background: #91c9b31a;
@@ -1313,121 +1036,6 @@ onUnmounted(() => {
   border-radius: 5px;
   padding: 6px 12px;
 }
-.hw-live-message {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-  color: var(--secondary);
-  font-size: 12px;
-  margin-bottom: 18px;
-}
-.hw-live-message svg,
-.live-indicator {
-  color: var(--green);
-}
-.hw-live-message small {
-  margin-left: auto;
-  font-size: 10px;
-  color: var(--muted);
-}
-.live-indicator {
-  width: 5px;
-  height: 5px;
-  background: var(--green);
-  border-radius: 50%;
-}
-.hw-live-team {
-  background: #141f24;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 16px;
-}
-.hw-team-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #cfb47b06;
-  border-bottom: 1px solid var(--line-strong);
-  padding: 11px 15px;
-}
-.hw-team-heading h3 {
-  font-size: 12px;
-  color: var(--gold-light);
-  font-weight: 500;
-}
-.hw-team-heading span {
-  font-size: 10px;
-  color: var(--muted);
-}
-.hw-live-player {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 15px;
-  width: 100%;
-  text-align: left;
-  border-bottom: 1px solid #ffffff06;
-  min-height: 72px;
-}
-.hw-live-player:last-child {
-  border-bottom: 0;
-}
-.hw-live-player:hover:not(:disabled) {
-  background: #cfb47b09;
-}
-.hw-live-player:disabled {
-  opacity: 0.68;
-  cursor: default;
-}
-.hw-live-identity {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1;
-}
-.hw-live-identity b {
-  font-size: 12px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hw-live-identity b small {
-  margin-left: 6px;
-}
-.hw-live-identity > span {
-  font-size: 10px;
-  color: var(--muted);
-}
-.hw-live-identity i {
-  font-style: normal;
-  margin-left: 4px;
-}
-.hw-live-kda {
-  font-size: 13px;
-  text-align: center;
-  min-width: 90px;
-}
-.hw-live-kda small {
-  display: block;
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: var(--muted);
-  margin-top: 3px;
-}
-.hw-live-items {
-  display: flex;
-  gap: 3px;
-  width: 125px;
-  flex-wrap: wrap;
-}
-.hw-live-items img {
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-}
 .hw-muted {
   font-size: 11px;
   color: var(--muted);
@@ -1489,24 +1097,8 @@ onUnmounted(() => {
   .hw-match-items {
     grid-template-columns: repeat(3, 22px);
   }
-  .hw-live-items {
-    width: 75px;
-  }
-  .hw-search {
-    min-width: 200px;
-  }
-  .hw-tabs button {
-    padding: 9px 10px;
-  }
 }
 @media (max-width: 800px) {
-  .hw-toolbar {
-    flex-wrap: wrap;
-  }
-  .hw-search {
-    order: 3;
-    width: 100%;
-  }
   .hw-layout {
     grid-template-columns: 1fr;
   }
@@ -1522,9 +1114,6 @@ onUnmounted(() => {
   .hw-match-items > span {
     width: 20px;
     height: 20px;
-  }
-  .hw-live-items {
-    display: none;
   }
 }
 </style>

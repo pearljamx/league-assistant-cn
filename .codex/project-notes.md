@@ -79,3 +79,12 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 实际用户旧程序正在运行，自动测试使用单独 --user-data-dir，不能为测试终止用户实例。测试脚本按 package.version 选择便携包，校验文件只列当前版本双包，避免旧版混入。
 - 最终运行代码8fa4121的GitHub Windows CI 40815051966全流程通过；前一轮小屏测试修正也已在40814448884通过。两个EXE的最终摘要见docs/verification.md，真实便携启动及OCR就绪通过；有已有正式安装，本轮不覆盖执行安装/卸载烟测。
 - v0.2.0已公开：https://github.com/pearljamx/league-assistant-cn/releases/tag/v0.2.0，Release ID427438841，标签最终e1fb30c（后续不移动）。三附件服务端SHA-256一致，公开SHA256SUMS下载一致，两个EXE公开HEAD200，源码ZIP110文件与标签一致（PS1按声明CRLF）。旧v0.1.0保留，用户原有测试目录未改动。实际换英雄/十人对局/OCR实战与海斗分仍待验收/接入。
+
+## v0.3.0 Akari 式改版进度
+
+- ① 2026-10-29 完成：主窗 `titleBarStyle: hidden` + 原生 `titleBarOverlay`（右侧预留 150px 给系统按钮）；窄侧栏 SideNav（战绩/对局/数据/自动化，底部双弹窗、设置、连接头像）与 TitleBar（页面名、账号、Ctrl+K 召唤师搜索、自动接受开关、阶段）。
+- App.vue 拆分：store.ts 为主窗共享状态（设置、目录、英雄跟随、打开玩家请求）；OverlayApp.vue 独立悬浮窗；views/ChampionDataView（英雄榜 + 出装符文 / 海克斯强化标签，合并原总览/推荐/排行）、LiveGameView（选人/对局双列卡片、近期同模式胜率、备选席）、AutomationView（自动接受）。页面用 KeepAlive 保持状态。
+- 设置改为 SettingsModal 分类弹窗；关闭主窗口 closeAction（ask/tray/quit，默认 ask），CloseConfirm 可记住；tray.ts 托盘菜单（显示、自动接受、双弹窗、退出），Windows session-end 直接退出。
+- 搜索历史仅存本窗口 localStorage（按大区过滤，可清空），失败忽略。
+- 旧 style.css 的 `.app-shell{display:flex}` 会覆盖 shell.css 的 grid，导致主区只有内容宽；全局 CSS 新旧同名选择器需去重。
+- 冒烟脚本主窗选择改为 URL 无 hash（原先只排除 #overlay，会误选 #champion-info）。验证：typecheck、98 单测、renderer 5 / history 6 / companions 8 隔离场景、真实客户端只读桌面冒烟（173 英雄、12 装备行、九项符文预览未应用、118 强化行）。
