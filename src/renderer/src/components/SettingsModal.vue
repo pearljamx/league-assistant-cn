@@ -175,11 +175,34 @@ onMounted(async () => {
             <div>
               <strong>重新打开小窗</strong>
               <p>
-                默认贴在客户端旁边，拖动后保持位置。点头像只查看，点“换用”才替换英雄，不会自动锁定。
+                默认贴在客户端旁边。点头像直接换用，右键只查看，峡谷不会自动锁定。
               </p>
             </div>
             <button class="button secondary" @click="openCompanions">
               打开小窗<ArrowUpRight :size="14" />
+            </button>
+          </div>
+          <div class="setting-row">
+            <div>
+              <strong>小窗位置</strong>
+              <p>
+                {{
+                  settings.companionPosition?.picker ||
+                  settings.companionPosition?.info
+                    ? "已记住上次拖动的位置，下次显示和重新启动后放回原处。"
+                    : "拖动小窗后会记住位置；目前贴在客户端旁边。"
+                }}
+              </p>
+            </div>
+            <button
+              class="button secondary"
+              :disabled="
+                !settings.companionPosition?.picker &&
+                !settings.companionPosition?.info
+              "
+              @click="save({ companionPosition: null })"
+            >
+              恢复自动贴靠
             </button>
           </div>
           <div class="setting-row">

@@ -370,6 +370,10 @@ export interface Settings {
   companionSize?: Partial<
     Record<"picker" | "info", { width: number; height: number }>
   >;
+  /** 用户拖动后两个小窗的位置（DIP）；下次显示时放回原处，不再自动贴靠。 */
+  companionPosition?: Partial<
+    Record<"picker" | "info", { x: number; y: number }>
+  > | null;
   closeAction?: CloseAction;
   /** 海克斯数据来源：默认 aramgg（需 API Key），可切回国服 AramHex 样本。 */
   hexSource?: "aramgg" | "aramhex";

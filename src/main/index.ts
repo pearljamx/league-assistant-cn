@@ -227,6 +227,8 @@ else {
           overlay: z.boolean().optional(),
           companionWindows: z.boolean().optional(),
           closeAction: z.enum(["ask", "tray", "quit"]).optional(),
+          // 界面只能清除保存的位置（恢复自动贴靠），位置本身由拖动窗口写入。
+          companionPosition: z.null().optional(),
           hexSource: z.enum(["aramgg", "aramhex"]).optional(),
           autoSelect: z
             .object({
@@ -291,10 +293,11 @@ else {
           parsed as Partial<Settings>,
         );
         client.updateAutomation();
+        if (parsed.companionPosition === null) repositionCompanions();
         // 只改显示来源或关闭方式时保留当前三选一识别结果。
         if (
           !Object.keys(parsed).every((key) =>
-            ["hexSource", "closeAction"].includes(key),
+            ["hexSource", "closeAction", "companionPosition"].includes(key),
           )
         )
           recognition.settingsChanged();
@@ -657,8 +660,18 @@ else {
         });
         if (role === "picker") pickerWindow = window;
         else infoWindow = window;
-        // 用户拖动过的小窗保持其位置，不再自动贴靠客户端。
+        // 用户拖动过的小窗保持其位置，并记住到下次显示和下次启动。
         window.on("will-move", () => userMoved.add(role));
+        window.on("moved", () => {
+          if (window.isDestroyed() || !userMoved.has(role)) return;
+          const { x, y } = window.getBounds();
+          const current = storage.getSettings().companionPosition ?? {};
+          void storage
+            .updateSettings({
+              companionPosition: { ...current, [role]: { x, y } },
+            })
+            .catch(() => {});
+        });
         window.on("resized", () => {
           if (window.isDestroyed()) return;
           const { width, height } = window.getBounds();
@@ -778,14 +791,29 @@ else {
           sizes,
         );
       }
+      /** 上次关闭时的位置：窗口左上角仍落在某个屏幕的工作区内才使用，屏幕变化后退回贴靠。 */
+      function savedPosition(role: CompanionRole) {
+        const saved = storage.getSettings().companionPosition?.[role];
+        if (!saved) return null;
+        const size = companionSizesNow()[role];
+        const visible = screen.getAllDisplays().some(({ workArea: area }) => {
+          return (
+            saved.x >= area.x - size.width + 80 &&
+            saved.x <= area.x + area.width - 80 &&
+            saved.y >= area.y &&
+            saved.y <= area.y + area.height - 40
+          );
+        });
+        return visible ? { ...saved, ...size } : null;
+      }
       function applyLayout(
         roles: CompanionRole[],
         next: ReturnType<typeof layoutCompanions>,
       ) {
         for (const role of roles) {
           const window = companionWindow(role);
-          if (window && !window.isDestroyed() && !userMoved.has(role))
-            window.setBounds(next[role]);
+          if (!window || window.isDestroyed() || userMoved.has(role)) continue;
+          window.setBounds(savedPosition(role) ?? next[role]);
         }
       }
       async function placeCompanions(roles: CompanionRole[]) {
@@ -822,11 +850,12 @@ else {
           note(`place failed ${(error as Error).message}`),
         );
       }
-      const repositionCompanions = () => {
+      // 函数声明会提升，设置保存处理里提前调用也不会触发初始化前访问。
+      function repositionCompanions() {
         userMoved.clear();
         lastClientRect = null;
         void placeCompanions(["picker", "info"]).catch(() => {});
-      };
+      }
       screen.on("display-removed", repositionCompanions);
       screen.on("display-metrics-changed", repositionCompanions);
       function updateOverlay() {

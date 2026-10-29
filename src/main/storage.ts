@@ -160,6 +160,25 @@ export function validateSettings(
       );
     next.autoSelect = value;
   }
+  // null 表示恢复自动贴靠；其余只接受整数坐标。
+  if (patch.companionPosition === null) delete next.companionPosition;
+  else if (
+    patch.companionPosition &&
+    typeof patch.companionPosition === "object"
+  ) {
+    const position = { ...(base.companionPosition ?? {}) };
+    for (const role of ["picker", "info"] as const) {
+      const value = (patch.companionPosition as Record<string, any>)[role];
+      if (
+        Number.isInteger(value?.x) &&
+        Number.isInteger(value?.y) &&
+        Math.abs(value.x) <= 100000 &&
+        Math.abs(value.y) <= 100000
+      )
+        position[role] = { x: value.x, y: value.y };
+    }
+    next.companionPosition = position;
+  }
   if (["aramgg", "aramhex"].includes(patch.hexSource ?? ""))
     next.hexSource = patch.hexSource!;
   if (["ask", "tray", "quit"].includes(patch.closeAction ?? ""))

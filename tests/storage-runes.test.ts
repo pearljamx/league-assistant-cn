@@ -208,3 +208,28 @@ it("小窗尺寸只接受合理范围内的整数，并保留另一个窗的尺�
     info: { width: 400, height: 700 },
   });
 });
+
+it("小窗位置只接受整数坐标，null 恢复自动贴靠", async () => {
+  const { defaults, validateSettings } = await import("../src/main/storage");
+  const saved = validateSettings(
+    {
+      companionPosition: {
+        picker: { x: 1672, y: -20 },
+        info: { x: 1.5, y: 3 } as any,
+      },
+    },
+    defaults,
+  );
+  expect(saved.companionPosition).toEqual({ picker: { x: 1672, y: -20 } });
+  const merged = validateSettings(
+    { companionPosition: { info: { x: 10, y: 20 } } },
+    saved,
+  );
+  expect(merged.companionPosition).toEqual({
+    picker: { x: 1672, y: -20 },
+    info: { x: 10, y: 20 },
+  });
+  expect(
+    validateSettings({ companionPosition: null }, merged).companionPosition,
+  ).toBeUndefined();
+});
