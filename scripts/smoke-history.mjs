@@ -112,9 +112,19 @@ try {
   await expect(
     page.getByRole("button", { name: "身份隐藏，无法查询", exact: true }),
   ).toBeDisabled();
-  await page
-    .getByRole("button", { name: "查看实时玩家 测试队友#TEST", exact: true })
-    .click();
+  const mate = page.getByRole("button", {
+    name: "查看实时玩家 测试队友#TEST",
+    exact: true,
+  });
+  await expect(mate.locator(".live-tag.met")).toHaveText("遇到过 1 次");
+  await expect(mate.locator(".live-tag.good")).toHaveText("好队友");
+  await expect(
+    page
+      .getByRole("button", { name: /查看实时玩家 测试账号/ })
+      .locator(".live-tag.met"),
+  ).toHaveCount(0);
+  report.checks.push("实时玩家卡片显示遇到过次数与本机标记，本人不显示遇到过");
+  await mate.click();
   await expect(tab().locator(".hw-profile h2")).toHaveText("测试队友");
   await expect(tabs).toHaveCount(3);
   report.checks.push("实时双队展示，公开玩家可查询，隐藏身份禁用查询");

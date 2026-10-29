@@ -20,19 +20,28 @@ import {
   settings,
   state,
 } from "../store";
-import { duration, modeName, percent } from "../format";
+import { duration, modeName, percent, playerTagNames } from "../format";
+import {
+  premadeGroups,
+  streakOf,
+  type RecentGame,
+} from "../../../shared/live-tags";
 import ChampionIcon from "../components/ChampionIcon.vue";
 import type {
+  EncounterSummary,
   HeroStat,
   LiveGame,
   LivePlayer,
   Match,
+  PlayerNote,
   Selection,
 } from "../../../shared/types";
 
 interface RecentRecord {
   games: number;
   wins: number;
+  /** 近期全部有效对局（从新到旧），用于连胜连败与预组队推断。 */
+  history: RecentGame[];
   error: string | null;
 }
 const live = ref<LiveGame | null>(null);
@@ -45,6 +54,9 @@ const selection = ref<Selection>({
 const heroStats = ref<HeroStat[]>([]);
 const recent = ref<Record<string, RecentRecord>>({});
 const loading = ref<Record<string, boolean>>({});
+/** 本机标记与本人遇到记录，只按公开 PUUID 读取。 */
+const notes = ref<Record<string, PlayerNote | null>>({});
+const encounters = ref<Record<string, EncounterSummary | null>>({});
 const error = ref("");
 const busy = ref(false);
 let liveEpoch = 0,
@@ -69,6 +81,64 @@ const teams = computed(() => {
     players: players.filter((player) => player.teamId === id),
   }));
 });
+/** 每支队伍内的预组队编号：近期至少两局同队的公开玩家归为一组。 */
+const premade = computed(() =>
+  premadeGroups(
+    live.value?.players ?? [],
+    Object.fromEntries(
+      Object.entries(recent.value).map(([id, record]) => [id, record.history]),
+    ),
+  ),
+);
+interface LiveTag {
+  text: string;
+  kind:
+    | "premade"
+    | "met"
+    | "win"
+    | "lose"
+    | "good"
+    | "watch"
+    | "avoid"
+    | "friend";
+  title: string;
+}
+function tagsOf(player: LivePlayer): LiveTag[] {
+  const puuid = player.puuid;
+  if (!puuid) return [];
+  const tags: LiveTag[] = [];
+  const group = premade.value[puuid];
+  if (group)
+    tags.push({
+      text: "预组队 " + String.fromCharCode(64 + group),
+      kind: "premade",
+      title: "近期战绩中与同队的另一位公开玩家至少两局同队",
+    });
+  const met = encounters.value[puuid];
+  if (!player.isSelf && met?.total)
+    tags.push({
+      text: "遇到过 " + met.total + " 次",
+      kind: "met",
+      title: `在你的战绩中同局 ${met.total} 次（队友 ${met.games.filter((game) => game.sameTeam).length} 次）`,
+    });
+  const streak = streakOf(recent.value[puuid]?.history ?? []);
+  if (streak)
+    tags.push({
+      text: streak.count + (streak.win ? " 连胜" : " 连败"),
+      kind: streak.win ? "win" : "lose",
+      title: "最近同模式对局",
+    });
+  const note = notes.value[puuid];
+  if (note?.tag)
+    tags.push({
+      text: playerTagNames[note.tag],
+      kind: note.tag,
+      title: note.note || "本机玩家标记",
+    });
+  else if (note?.note)
+    tags.push({ text: "已备注", kind: "watch", title: note.note });
+  return tags;
+}
 const isPublic = (player: LivePlayer) =>
   !player.identityHidden &&
   Boolean(player.puuid || player.riotId?.includes("#"));
@@ -109,7 +179,10 @@ async function loadLive() {
     const result = await unwrap(api.getLiveGame());
     if (epoch !== liveEpoch || current !== context()) return;
     live.value = result;
-    for (const player of result.players) void loadRecent(player);
+    for (const player of result.players) {
+      void loadRecent(player);
+      void loadMarks(player);
+    }
   } catch (reason) {
     if (epoch === liveEpoch && current === context()) {
       live.value = null;
@@ -164,19 +237,23 @@ async function loadRecent(player: LivePlayer) {
   try {
     const page = await unwrap(api.getHistory(puuid, 0));
     if (epoch !== teamEpoch || current !== context()) return;
-    const records = page.matches
-      .filter(
-        (match) =>
-          !match.private &&
-          !match.remake &&
-          match.duration >= 240 &&
-          sameMode(match),
-      )
-      .map((match) => match.players.find((item) => item.puuid === puuid))
-      .filter(Boolean);
+    const history: RecentGame[] = [];
+    for (const match of page.matches) {
+      if (match.private || match.remake || match.duration < 240) continue;
+      const self = match.players.find((item) => item.puuid === puuid);
+      if (self)
+        history.push({
+          matchId: match.id,
+          teamId: self.teamId,
+          win: self.win,
+          sameMode: sameMode(match),
+        });
+    }
+    const records = history.filter((game) => game.sameMode);
     recent.value[puuid] = {
       games: records.length,
-      wins: records.filter((item) => item!.win).length,
+      wins: records.filter((game) => game.win).length,
+      history,
       error: null,
     };
   } catch (reason) {
@@ -184,16 +261,34 @@ async function loadRecent(player: LivePlayer) {
       recent.value[puuid] = {
         games: 0,
         wins: 0,
+        history: [],
         error: (reason as Error).message,
       };
   } finally {
     loading.value[puuid] = false;
   }
 }
+/** 读取本机标记和遇到记录；失败时不显示标签，不影响其他信息。 */
+async function loadMarks(player: LivePlayer) {
+  const puuid = player.puuid;
+  if (!puuid || player.identityHidden || puuid in notes.value) return;
+  const epoch = teamEpoch,
+    current = context();
+  notes.value[puuid] = null;
+  const [note, met] = await Promise.all([
+    api.getPlayerNote(puuid).catch(() => null),
+    player.isSelf ? null : api.getEncounters(puuid).catch(() => null),
+  ]);
+  if (epoch !== teamEpoch || current !== context()) return;
+  if (note?.ok) notes.value[puuid] = note.data ?? null;
+  if (met?.ok) encounters.value[puuid] = met.data ?? null;
+}
 function resetTeam() {
   teamEpoch++;
   recent.value = {};
   loading.value = {};
+  notes.value = {};
+  encounters.value = {};
 }
 function refresh() {
   resetTeam();
@@ -347,6 +442,15 @@ defineExpose({ refresh });
               }}<i v-if="positionOf(player)">· {{ positionOf(player) }}</i
               ><i v-if="player.level !== null">· Lv.{{ player.level }}</i></span
             >
+            <span v-if="tagsOf(player).length" class="live-tags">
+              <em
+                v-for="tag in tagsOf(player)"
+                :key="tag.text"
+                :class="['live-tag', tag.kind]"
+                :title="tag.title"
+                >{{ tag.text }}</em
+              >
+            </span>
           </span>
           <span class="live-card-stat">
             <b>{{ percent(heroStat(player.championId)?.winRate) }}</b

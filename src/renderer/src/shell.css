@@ -1032,3 +1032,47 @@ button.title-tab.active svg {
 .aramgg-key-status {
   color: var(--secondary) !important;
 }
+
+/* 实时对局玩家标签 */
+.live-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+.live-tag {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 3px;
+  color: var(--secondary);
+  background: #ffffff0d;
+  white-space: nowrap;
+}
+.live-tag.premade {
+  color: #f6c3dc;
+  background: #f07ab826;
+}
+.live-tag.met {
+  color: #c9b4f0;
+  background: #9a55e026;
+}
+.live-tag.win {
+  color: #9bd8bd;
+  background: #91c9b31f;
+}
+.live-tag.lose,
+.live-tag.avoid {
+  color: #f0a39a;
+  background: #e0605024;
+}
+.live-tag.good,
+.live-tag.friend {
+  color: var(--gold-light);
+  background: #cfb47b1f;
+}
+.live-tag.watch {
+  color: #f2c766;
+  background: #f2c7661a;
+}
