@@ -148,6 +148,37 @@ try {
     },
   ]);
   report.checks.push("符文预览参数可跨桥接复制到模拟接口");
+  await page.getByRole("button", { name: "自动化", exact: true }).click();
+  for (const name of [
+    "自动选择英雄",
+    "自动禁用英雄",
+    "大乱斗自动抢备选席",
+    "自动锁定",
+  ])
+    await expect(
+      page.getByRole("switch", { name, exact: true }),
+    ).toHaveAttribute("aria-checked", "false");
+  await page.getByRole("switch", { name: "自动选择英雄", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "自动选择英雄列表", exact: true })
+    .fill("测试英雄一");
+  await page
+    .getByRole("button", { name: "添加 测试英雄一", exact: true })
+    .click();
+  await expect(page.locator(".champion-list-editor").first()).toContainText(
+    "1. 测试英雄一",
+  );
+  const autoSelect = await page.evaluate(
+    async () => (await window.assistant.getSettings()).data.autoSelect,
+  );
+  expect(autoSelect).toMatchObject({
+    pick: true,
+    pickChampions: [202],
+    ban: false,
+    lock: false,
+    bench: false,
+  });
+  report.checks.push("自动选人与禁用默认全关，开启并添加英雄后按优先级保存");
   expect(report.errors).toEqual([]);
   console.log(JSON.stringify(report));
 } catch (error) {

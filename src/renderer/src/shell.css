@@ -1076,3 +1076,22 @@ button.title-tab.active svg {
   color: #f2c766;
   background: #f2c7661a;
 }
+
+/* 自动化页：带英雄列表的设置行 */
+.setting-row.stacked {
+  display: block;
+}
+.setting-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.setting-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.automation-view > .panel + .panel {
+  margin-top: 14px;
+}

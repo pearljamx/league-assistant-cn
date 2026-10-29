@@ -349,7 +349,23 @@ export interface Settings {
   closeAction?: CloseAction;
   /** 海克斯数据来源：默认 aramgg（需 API Key），可切回国服 AramHex 样本。 */
   hexSource?: "aramgg" | "aramhex";
+  /** 自动选人/禁用/抢备选席，全部默认关闭。 */
+  autoSelect?: AutoSelectSettings;
   managedRunePage: { id: number; puuid: string } | null;
+}
+export interface AutoSelectSettings {
+  /** 峡谷：轮到本人时按列表预选；大乱斗：打开锁定时自动拿列表中的卡片。 */
+  pick: boolean;
+  pickChampions: number[];
+  /** 峡谷：轮到本人禁用时按列表预禁，不禁队友想选的英雄。 */
+  ban: boolean;
+  banChampions: number[];
+  /** 预选/预禁后延时自动锁定。默认关闭。 */
+  lock: boolean;
+  lockDelayMs: number;
+  /** 大乱斗：备选席出现列表中更靠前的英雄时自动交换。 */
+  bench: boolean;
+  benchChampions: number[];
 }
 export type CloseAction = "ask" | "tray" | "quit";
 export interface SkillRating {

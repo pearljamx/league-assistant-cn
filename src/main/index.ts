@@ -40,7 +40,7 @@ import { PlayerStore, playerTags } from "./players";
 import { SecretStore } from "./secrets";
 import { AramggProvider } from "./providers/aramgg";
 import { AramggSources, PublicAramggProvider } from "./providers/aramgg-public";
-import type { Result } from "../shared/types";
+import type { Result, Settings } from "../shared/types";
 
 const current = dirname(fileURLToPath(import.meta.url));
 const root = join(current, "../..");
@@ -222,6 +222,19 @@ else {
           companionWindows: z.boolean().optional(),
           closeAction: z.enum(["ask", "tray", "quit"]).optional(),
           hexSource: z.enum(["aramgg", "aramhex"]).optional(),
+          autoSelect: z
+            .object({
+              pick: z.boolean().optional(),
+              pickChampions: z.array(hero).max(10).optional(),
+              ban: z.boolean().optional(),
+              banChampions: z.array(hero).max(10).optional(),
+              lock: z.boolean().optional(),
+              lockDelayMs: z.number().int().min(1000).max(20000).optional(),
+              bench: z.boolean().optional(),
+              benchChampions: z.array(hero).max(10).optional(),
+            })
+            .strict()
+            .optional(),
         })
         .strict();
       function handle(
@@ -267,7 +280,10 @@ else {
       handle("settings", () => storage.getSettings());
       handle("settings-save", async (patch) => {
         const parsed = settingsPatch.parse(patch);
-        const settings = await storage.updateSettings(parsed);
+        // autoSelect 可只传部分字段，由 validateSettings 与现有值合并。
+        const settings = await storage.updateSettings(
+          parsed as Partial<Settings>,
+        );
         client.updateAutomation();
         // 只改显示来源或关闭方式时保留当前三选一识别结果。
         if (

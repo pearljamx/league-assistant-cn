@@ -4,6 +4,7 @@ import { discover, type Credentials } from "./discovery";
 import { jsonRequest } from "./http";
 import { AppError, safeError } from "./errors";
 import { AutoAccept } from "./automation";
+import { autoSelectDefaults, planAutoSelect } from "./auto-select";
 import type {
   ConnectionState,
   ChampionChoices,
@@ -126,6 +127,11 @@ export class Client extends EventEmitter {
   private connectionRevision = 0;
   private choosingChampion = false;
   private accept: AutoAccept;
+  /** 自动选人：每一步只尝试一次；预选后记录时间，满足延时才锁定。 */
+  private autoTimer: ReturnType<typeof setTimeout> | null = null;
+  private autoBusy = false;
+  private autoDone = new Set<string>();
+  private autoHoverAt = new Map<number, number>();
   constructor(private storage: Storage) {
     super();
     this.accept = new AutoAccept(
@@ -263,6 +269,7 @@ export class Client extends EventEmitter {
             event.eventType === "Delete"
               ? emptySelection()
               : parseSelection(event.data);
+          if (event.eventType !== "Delete") this.scheduleAutoSelect();
           if (
             event.eventType !== "Delete" ||
             !["ChampSelect", "GameStart", "InProgress", "Reconnect"].includes(
@@ -317,7 +324,13 @@ export class Client extends EventEmitter {
     if (phase !== this.state.phase) {
       this.selectionRevision++;
       if (phase === "ReadyCheck") this.readyEpoch++;
-      if (phase !== "ChampSelect") this.selection = emptySelection();
+      if (phase !== "ChampSelect") {
+        this.selection = emptySelection();
+        this.autoDone.clear();
+        this.autoHoverAt.clear();
+        if (this.autoTimer) clearTimeout(this.autoTimer);
+        this.autoTimer = null;
+      }
       if (
         ["None", "Lobby", "Matchmaking", "ReadyCheck", "EndOfGame"].includes(
           phase,
@@ -339,6 +352,115 @@ export class Client extends EventEmitter {
       `${this.credentials?.pid}:${this.state.summoner?.puuid}:${this.readyEpoch}`,
       settings.acceptDelayMs,
     );
+  }
+  private autoSettings() {
+    return { ...autoSelectDefaults, ...this.storage.getSettings().autoSelect };
+  }
+  /** 会话变化后稍等片刻再计划，避免同一批事件重复触发。全部开关关闭时不做任何事。 */
+  private scheduleAutoSelect(delay = 400) {
+    const settings = this.autoSettings();
+    if (!settings.pick && !settings.ban && !settings.bench) return;
+    if (this.state.phase !== "ChampSelect") return;
+    if (this.autoTimer) clearTimeout(this.autoTimer);
+    this.autoTimer = setTimeout(() => {
+      this.autoTimer = null;
+      void this.runAutoSelect();
+    }, delay);
+  }
+  private async runAutoSelect() {
+    const settings = this.autoSettings();
+    if (!settings.pick && !settings.ban && !settings.bench) return;
+    if (this.autoBusy || this.choosingChampion)
+      return this.scheduleAutoSelect(800);
+    let current: () => void;
+    try {
+      current = this.championChoiceGuard();
+    } catch {
+      return;
+    }
+    this.autoBusy = true;
+    try {
+      const { session, choices } = await this.readChoices(current);
+      if (!this.ownsLocalCell(session)) return;
+      const mode = this.state.mode;
+      const list = async (path: string) => {
+        const value = await this.request<number[]>(path).catch(() => null);
+        current();
+        return Array.isArray(value) ? value : null;
+      };
+      const rift = mode === "rift";
+      const step = planAutoSelect({
+        session,
+        settings,
+        mode,
+        pickable:
+          rift && settings.pick
+            ? await list("/lol-champ-select/v1/pickable-champion-ids")
+            : null,
+        bannable:
+          rift && settings.ban
+            ? await list("/lol-champ-select/v1/bannable-champion-ids")
+            : null,
+        cards: choices.kind === "subset" ? (choices.cards ?? []) : [],
+        swappable: choices.kind === "bench" ? choices.championIds : [],
+        current:
+          Number(
+            session.myTeam?.find(
+              (member: any) => member.cellId === session.localPlayerCellId,
+            )?.championId,
+          ) || 0,
+      });
+      if (!step) return;
+      if ((step.kind === "pick" || step.kind === "ban") && step.complete) {
+        // 锁定前至少等用户设置的延时；期间用户改选其他英雄时计划会变为 null。
+        const since = this.autoHoverAt.get(step.actionId) ?? Date.now();
+        this.autoHoverAt.set(step.actionId, since);
+        const wait = since + settings.lockDelayMs - Date.now();
+        if (wait > 0) return this.scheduleAutoSelect(wait + 50);
+      }
+      const key = `${session.gameId ?? ""}:${JSON.stringify(step)}`;
+      if (this.autoDone.has(key)) return;
+      this.autoDone.add(key);
+      current();
+      if (step.kind === "bench") {
+        await this.request(
+          `/lol-champ-select/v1/session/bench/swap/${step.championId}`,
+          "POST",
+        );
+        this.reportAuto(`已自动换用备选席英雄`);
+      } else {
+        await this.request(
+          `/lol-champ-select/v1/session/actions/${step.actionId}`,
+          "PATCH",
+          {
+            championId: step.championId,
+            completed: step.kind === "card" ? true : step.complete,
+          },
+        );
+        if (step.kind !== "card" && !step.complete) {
+          this.autoHoverAt.set(step.actionId, Date.now());
+          if (settings.lock) this.scheduleAutoSelect(settings.lockDelayMs + 50);
+        }
+        this.reportAuto(
+          step.kind === "ban"
+            ? step.complete
+              ? "已自动锁定禁用"
+              : "已自动预禁英雄"
+            : step.kind === "card" || step.complete
+              ? "已自动锁定英雄"
+              : "已自动预选英雄",
+        );
+      }
+      await this.refreshSelection();
+    } catch {
+      /* 状态变化或客户端拒绝：不重试同一步，等待下一次会话变化。 */
+    } finally {
+      this.autoBusy = false;
+    }
+  }
+  private reportAuto(message: string) {
+    this.state.message = message;
+    this.publish();
   }
   async refreshSelection() {
     if (this.state.phase !== "ChampSelect") return;

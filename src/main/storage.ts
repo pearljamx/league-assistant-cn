@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { Settings } from "../shared/types";
+import { autoSelectDefaults } from "./auto-select";
 
 export const defaults: Settings = {
   autoAccept: false,
@@ -16,6 +17,7 @@ export const defaults: Settings = {
   companionWindows: true,
   closeAction: "ask",
   hexSource: "aramgg",
+  autoSelect: { ...autoSelectDefaults },
   managedRunePage: null,
 };
 export class Storage {
@@ -126,6 +128,37 @@ export function validateSettings(
         size[role] = { width: value.width, height: value.height };
     }
     next.companionSize = size;
+  }
+  if (patch.autoSelect && typeof patch.autoSelect === "object") {
+    const input = patch.autoSelect as unknown as Record<string, unknown>;
+    const value = { ...autoSelectDefaults, ...(base.autoSelect ?? {}) };
+    for (const key of ["pick", "ban", "lock", "bench"] as const)
+      if (typeof input[key] === "boolean") value[key] = input[key] as boolean;
+    for (const key of [
+      "pickChampions",
+      "banChampions",
+      "benchChampions",
+    ] as const)
+      if (Array.isArray(input[key]))
+        value[key] = [
+          ...new Set(
+            (input[key] as unknown[]).filter(
+              (id): id is number =>
+                Number.isInteger(id) &&
+                (id as number) > 0 &&
+                (id as number) <= 100000,
+            ),
+          ),
+        ].slice(0, 10);
+    if (
+      typeof input.lockDelayMs === "number" &&
+      Number.isFinite(input.lockDelayMs)
+    )
+      value.lockDelayMs = Math.max(
+        1000,
+        Math.min(20000, Math.round(input.lockDelayMs)),
+      );
+    next.autoSelect = value;
   }
   if (["aramgg", "aramhex"].includes(patch.hexSource ?? ""))
     next.hexSource = patch.hexSource!;
