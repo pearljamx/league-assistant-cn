@@ -179,6 +179,34 @@ try {
     bench: false,
   });
   report.checks.push("自动选人与禁用默认全关，开启并添加英雄后按优先级保存");
+  await page.getByRole("button", { name: "工具集", exact: true }).click();
+  await expect(page.locator(".friend-list li")).toHaveCount(2);
+  await expect(page.locator(".friend-list li").first()).toContainText("游戏中");
+  await expect(
+    page.getByRole("button", { name: "观战 离线好友#TEST", exact: true }),
+  ).toHaveCount(0);
+  // 大厅阶段不能重随，按钮保持禁用。
+  await expect(page.getByRole("button", { name: /重随英雄/ })).toBeDisabled();
+  await page
+    .getByRole("button", { name: "观战 测试好友#TEST", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "个性签名", exact: true })
+    .fill("新签名");
+  await page.getByRole("button", { name: "保存签名", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "在线状态", exact: true })
+    .selectOption("away");
+  await expect
+    .poll(() => page.evaluate(() => window.rendererFixture.toolCalls()))
+    .toEqual([
+      "spectate:fixture-friend",
+      'chat:{"statusMessage":"新签名"}',
+      'chat:{"availability":"away"}',
+    ]);
+  report.checks.push(
+    "工具集只在点击时观战与修改签名/状态，离线好友无观战入口，大厅不能重随",
+  );
   expect(report.errors).toEqual([]);
   console.log(JSON.stringify(report));
 } catch (error) {

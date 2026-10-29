@@ -33,7 +33,8 @@ import {
   type CompanionRole,
   type WindowBounds,
 } from "./companions";
-import { clientWindowRect } from "./client-window";
+import { clientWindowRect, resizeClientWindow } from "./client-window";
+import { Toolkit } from "./toolkit";
 import { setPublicFetcher } from "./http";
 import { createTray } from "./tray";
 import { PlayerStore, playerTags } from "./players";
@@ -171,6 +172,7 @@ else {
         rating = new SkillRatingProvider(),
         runes = new RuneService(client, storage, tencent),
         players = new PlayerStore(storage),
+        toolkit = new Toolkit(client),
         aramgg = new AramggSources(
           new PublicAramggProvider(storage),
           new AramggProvider(
@@ -446,6 +448,35 @@ else {
         return players.clearEncounters(owner, platform);
       });
       handle("match", (value) => history.match(matchId.parse(value)));
+      // 工具集：全部由用户点击触发。
+      handle("toolkit-reroll-state", () => toolkit.rerollState());
+      handle("toolkit-reroll", () => toolkit.reroll());
+      handle("toolkit-restart-ux", () => toolkit.restartUx());
+      handle("toolkit-fix-window", async () => {
+        const size = await toolkit.expectedWindowSize();
+        if (!(await resizeClientWindow(size.width, size.height)))
+          throw new AppError(
+            "没有找到可调整的客户端窗口（最小化时请先还原）。",
+            "CLIENT_WINDOW_MISSING",
+          );
+        return { width: size.width, height: size.height };
+      });
+      handle("toolkit-friends", () => toolkit.friends());
+      handle("toolkit-spectate", (value) => toolkit.spectate(id.parse(value)));
+      handle("toolkit-chat", () => toolkit.chat());
+      handle("toolkit-chat-save", (value) =>
+        toolkit.setChat(
+          z
+            .object({
+              availability: z
+                .enum(["chat", "away", "mobile", "offline"])
+                .optional(),
+              statusMessage: z.string().max(200).optional(),
+            })
+            .strict()
+            .parse(value),
+        ),
+      );
       handle("summoner", (value) =>
         client.findSummoner(z.string().min(1).max(100).parse(value)),
       );

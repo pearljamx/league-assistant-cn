@@ -20,6 +20,7 @@ import PlayerTabsView from "./views/PlayerTabsView.vue";
 import LiveGameView from "./views/LiveGameView.vue";
 import ChampionDataView from "./views/ChampionDataView.vue";
 import AutomationView from "./views/AutomationView.vue";
+import ToolkitView from "./views/ToolkitView.vue";
 
 const settingsOpen = ref(false),
   searchOpen = ref(false),
@@ -67,6 +68,7 @@ onUnmounted(() => {
           <LiveGameView v-else-if="page === 'live'" />
           <ChampionDataView v-else-if="page === 'data'" />
           <AutomationView v-else-if="page === 'automation'" />
+          <ToolkitView v-else-if="page === 'toolkit'" />
         </KeepAlive>
       </main>
     </div>

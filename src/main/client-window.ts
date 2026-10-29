@@ -1,11 +1,21 @@
 import type { WindowBounds } from "./companions";
 
-// 只读查询英雄联盟客户端主窗口的屏幕位置，用于把小窗贴在旁边；不读取内存、不注入、不改动窗口。
+// 查询英雄联盟客户端主窗口的屏幕位置，用于把小窗贴在旁边；不读取内存、不注入。
+// 唯一的写操作是用户在工具集点击“修复窗口尺寸”时调整客户端窗口大小。
 let native: {
   find: (className: string, title: string | null) => unknown;
   rect: (window: unknown, rect: Buffer) => number;
   visible: (window: unknown) => number;
   iconic: (window: unknown) => number;
+  setPos: (
+    window: unknown,
+    after: unknown,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    flags: number,
+  ) => number;
   address: (pointer: unknown) => bigint | number;
 } | null = null;
 
@@ -20,6 +30,9 @@ async function load() {
     rect: user.func("int __stdcall GetWindowRect(void * window, void * rect)"),
     visible: user.func("int __stdcall IsWindowVisible(void * window)"),
     iconic: user.func("int __stdcall IsIconic(void * window)"),
+    setPos: user.func(
+      "int __stdcall SetWindowPos(void * window, void * after, int x, int y, int cx, int cy, uint flags)",
+    ),
     address: koffi.address,
   };
   return native;
@@ -44,4 +57,27 @@ export async function clientWindowRect(): Promise<WindowBounds | null> {
   } catch {
     return null;
   }
+}
+
+/** 用户触发：把客户端窗口调整为指定物理像素尺寸，保持左上角位置与层级不变。 */
+export async function resizeClientWindow(width: number, height: number) {
+  if (process.platform !== "win32") return false;
+  const api = await load();
+  const window = api.find("RCLIENT", null);
+  if (!window || Number(api.address(window)) === 0 || api.iconic(window))
+    return false;
+  const SWP_NOMOVE = 0x2,
+    SWP_NOZORDER = 0x4,
+    SWP_NOACTIVATE = 0x10;
+  return Boolean(
+    api.setPos(
+      window,
+      null,
+      0,
+      0,
+      width,
+      height,
+      SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+    ),
+  );
 }

@@ -8,7 +8,7 @@ import type {
 } from "../../shared/types";
 
 // 主窗口共用状态。各页面只通过这里读写设置，避免多份副本互相覆盖。
-export type PageId = "history" | "live" | "data" | "automation";
+export type PageId = "history" | "live" | "data" | "automation" | "toolkit";
 export interface PlayerTarget {
   puuid: string;
   name: string;

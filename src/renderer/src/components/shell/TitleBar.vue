@@ -19,6 +19,7 @@ const titles: Record<string, string> = {
   live: "实时对局",
   data: "英雄数据",
   automation: "自动化",
+  toolkit: "工具集",
 };
 const selectTab = (id: string) => (activeTab.value = id);
 const live = computed(() =>

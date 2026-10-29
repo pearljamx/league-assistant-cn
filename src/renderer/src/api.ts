@@ -124,6 +124,14 @@ const preview: AssistantApi = {
   deletePlayerNote: unavailable,
   getEncounters: unavailable,
   clearEncounters: unavailable,
+  getRerollState: unavailable,
+  reroll: unavailable,
+  restartClientUx: unavailable,
+  fixClientWindow: unavailable,
+  getFriends: unavailable,
+  spectateFriend: unavailable,
+  getChatStatus: unavailable,
+  setChatStatus: unavailable,
   getAramggStatus: async () => ({
     ok: true,
     data: {

@@ -3,6 +3,11 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import BrandMark from "./components/BrandMark.vue";
 import { api, unwrap } from "./api";
 import { count, outdatedNote, percent, rarityName } from "./format";
+import {
+  augmentGrades,
+  gradeFromRank,
+  shouldConsiderRefresh,
+} from "../../shared/augment-grade";
 import type {
   AramggChampion,
   AugmentRanking,
@@ -96,6 +101,18 @@ const aramggCards = computed(() => {
     (a, b) => (a.rank ?? 9999) - (b.rank ?? 9999),
   );
 });
+/** 本英雄强化内的相对评级：AramHex 按平滑胜率分位，aramgg 按国服推荐顺序分位。 */
+const hexGrades = computed(
+  () => new Map(augmentGrades(ranking.value?.augments ?? [])),
+);
+const cardGrades = computed(() =>
+  aramggCards.value.length === 3
+    ? aramggCards.value.map((card) => gradeFromRank(card.rank, card.total))
+    : cards.value.length === 3
+      ? cards.value.map((card) => hexGrades.value.get(card.augment.id) ?? null)
+      : [],
+);
+const refreshHint = computed(() => shouldConsiderRefresh(cardGrades.value));
 onMounted(async () => {
   unsubscribe = [
     api.onState((value) => (state.value = value)),
@@ -155,7 +172,12 @@ onUnmounted(() => unsubscribe.forEach((stop) => stop()));
             }}</small
           >
         </div>
-        <b>{{ percent(card.winRate) }}</b>
+        <b
+          >{{ percent(card.winRate)
+          }}<i :class="['grade', cardGrades[index] ?? 'none']">{{
+            cardGrades[index] ?? "—"
+          }}</i></b
+        >
       </div>
     </div>
     <div v-else-if="cards.length === 3" class="overlay-cards">
@@ -179,7 +201,12 @@ onUnmounted(() => unsubscribe.forEach((stop) => stop()));
             }}<span v-if="card.lowSample"> · 低样本</span></small
           >
         </div>
-        <b>{{ percent(card.winRate) }}</b>
+        <b
+          >{{ percent(card.winRate)
+          }}<i :class="['grade', cardGrades[index] ?? 'none']">{{
+            cardGrades[index] ?? "—"
+          }}</i></b
+        >
       </div>
     </div>
     <p v-else class="muted">
@@ -188,6 +215,9 @@ onUnmounted(() => unsubscribe.forEach((stop) => stop()));
           ? recognition.message
           : error || "正在读取当前英雄统计…"
       }}
+    </p>
+    <p v-if="refreshHint" class="overlay-refresh">
+      三张都在 C 档或以下，可考虑刷新
     </p>
     <div class="overlay-footer">
       <template v-if="aramggCards.length === 3"

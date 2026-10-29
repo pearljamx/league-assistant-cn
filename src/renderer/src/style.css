@@ -1186,3 +1186,21 @@ body:has(.overlay-shell) {
     transition: none !important;
   }
 }
+/* 悬浮窗评级与刷新提示 */
+.overlay-card > b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.overlay-card > b .grade {
+  font-style: normal;
+}
+.overlay-refresh {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  color: #f6c3dc;
+  background: #f07ab81f;
+  border: 1px solid #f07ab840;
+}

@@ -34,3 +34,17 @@ it("低样本或无胜率的强化不定级，也不影响其他强化的排名"
 it("可定级的强化太少时全部不定级", () => {
   expect(augmentGrades([row(1, 0.6), row(2, 0.5)]).size).toBe(0);
 });
+
+it("aramgg 顺序换算分档，三张都在 C 以下才提示刷新", async () => {
+  const { gradeFromRank, shouldConsiderRefresh } = await import(
+    "../src/shared/augment-grade"
+  );
+  expect(gradeFromRank(1, 50)).toBe("S");
+  expect(gradeFromRank(50, 50)).toBe("D");
+  expect(gradeFromRank(30, 50)).toBe("B");
+  expect(gradeFromRank(null, 50)).toBeNull();
+  expect(gradeFromRank(3, 2)).toBeNull();
+  expect(shouldConsiderRefresh(["C", "D", "D"])).toBe(true);
+  expect(shouldConsiderRefresh(["C", "B", "D"])).toBe(false);
+  expect(shouldConsiderRefresh(["C", null, "D"])).toBe(false);
+});

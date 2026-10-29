@@ -32,3 +32,23 @@ export function augmentGrades<
   });
   return grades;
 }
+
+/** aramgg 的国服推荐顺序换算成同一套分档：第 rank 位 / 共 total 个。 */
+export function gradeFromRank(
+  rank: number | null,
+  total: number | null,
+): AugmentGrade | null {
+  if (!rank || !total || total < minimumGraded || rank > total) return null;
+  const position = (rank - 1) / (total - 1);
+  return gradeThresholds.find(([, limit]) => position <= limit)![0];
+}
+
+/** 三选一的三张都已定级且都在 C 或以下时，提示可考虑刷新。有任何一张未定级时不提示。 */
+export function shouldConsiderRefresh(
+  grades: (AugmentGrade | null | undefined)[],
+): boolean {
+  return (
+    grades.length === 3 &&
+    grades.every((grade) => grade === "C" || grade === "D")
+  );
+}

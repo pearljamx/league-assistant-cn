@@ -75,6 +75,8 @@ const catalog = names.map((name, index) => ({
 const perks = [8005, 9111, 9104, 8014, 8139, 8140, 5008, 5008, 5011];
 const runeCalls = [];
 const notes = new Map();
+const toolCalls = [];
+const chat = { availability: "chat", statusMessage: "测试签名" };
 // 合成的 aramgg 数据：只用于隔离界面测试，不代表真实统计。
 const aramggStatus = {
   configured: true,
@@ -435,6 +437,56 @@ const api = {
     return ok({ puuid, name: other?.name ?? "", total: games.length, games });
   },
   clearEncounters: () => ok(undefined),
+  // 工具集：合成数据，记录调用但不连接任何客户端。
+  getRerollState: () =>
+    ok({ available: true, remaining: 2, current: 202, reason: "可以重随" }),
+  reroll: () => {
+    toolCalls.push("reroll");
+    return ok({ previous: 202 });
+  },
+  restartClientUx: () => {
+    toolCalls.push("restart-ux");
+    return ok(undefined);
+  },
+  fixClientWindow: () => {
+    toolCalls.push("fix-window");
+    return ok({ width: 1280, height: 720 });
+  },
+  getFriends: () =>
+    ok([
+      {
+        puuid: "fixture-friend",
+        name: "测试好友#TEST",
+        availability: "dnd",
+        inGame: true,
+        gameStatus: "inGame",
+        queue: "KIWI",
+        championId: 202,
+        statusMessage: "",
+        spectatable: true,
+      },
+      {
+        puuid: "fixture-friend-2",
+        name: "离线好友#TEST",
+        availability: "offline",
+        inGame: false,
+        gameStatus: "",
+        queue: "",
+        championId: null,
+        statusMessage: "",
+        spectatable: false,
+      },
+    ]),
+  spectateFriend: (puuid) => {
+    toolCalls.push("spectate:" + puuid);
+    return ok(undefined);
+  },
+  getChatStatus: () => ok({ ...chat }),
+  setChatStatus: (patch) => {
+    Object.assign(chat, patch);
+    toolCalls.push("chat:" + JSON.stringify(patch));
+    return ok({ ...chat });
+  },
   getAramggStatus: () => ok(aramggStatus),
   saveAramggKey: () => ok(aramggStatus),
   getAramggChampion: (championId) => ok(aramggChampion(championId)),
@@ -474,6 +526,7 @@ if (companionMode)
 contextBridge.exposeInMainWorld("assistant", api);
 contextBridge.exposeInMainWorld("rendererFixture", {
   runeCalls: () => runeCalls,
+  toolCalls: () => toolCalls,
   recognition: (patch) => {
     recognition = { ...idle(), ...patch };
     emit("recognition", recognition);

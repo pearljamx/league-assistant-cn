@@ -368,6 +368,29 @@ export interface AutoSelectSettings {
   benchChampions: number[];
 }
 export type CloseAction = "ask" | "tray" | "quit";
+/** 工具集 */
+export type ChatAvailability = "chat" | "away" | "mobile" | "offline";
+export interface ChatStatus {
+  availability: ChatAvailability;
+  statusMessage: string;
+}
+export interface FriendEntry {
+  puuid: string;
+  name: string;
+  availability: string;
+  inGame: boolean;
+  gameStatus: string;
+  queue: string;
+  championId: number | null;
+  statusMessage: string;
+  spectatable: boolean;
+}
+export interface RerollState {
+  available: boolean;
+  remaining: number | null;
+  current: number | null;
+  reason: string;
+}
 export interface SkillRating {
   provider: "hexdata";
   status: "ready" | "error" | "unavailable" | "needs-authorization";
@@ -469,6 +492,14 @@ export interface AssistantApi {
     >
   >;
   clearEncounters(): Promise<Result<void>>;
+  getRerollState(): Promise<Result<RerollState>>;
+  reroll(): Promise<Result<{ previous: number | null }>>;
+  restartClientUx(): Promise<Result<void>>;
+  fixClientWindow(): Promise<Result<{ width: number; height: number }>>;
+  getFriends(): Promise<Result<FriendEntry[]>>;
+  spectateFriend(puuid: string): Promise<Result<void>>;
+  getChatStatus(): Promise<Result<ChatStatus>>;
+  setChatStatus(patch: Partial<ChatStatus>): Promise<Result<ChatStatus>>;
   onCloseRequest(callback: () => void): () => void;
   onState(callback: (state: ConnectionState) => void): () => void;
   onSelection(callback: (selection: Selection) => void): () => void;

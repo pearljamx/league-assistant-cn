@@ -6,6 +6,7 @@ import {
   History,
   Radio,
   Settings2,
+  Wrench,
   Zap,
 } from "@lucide/vue";
 import { api } from "../../api";
@@ -18,6 +19,7 @@ const items: { id: PageId; label: string; short: string; icon: unknown }[] = [
   { id: "live", label: "实时对局", short: "对局", icon: Radio },
   { id: "data", label: "英雄数据", short: "数据", icon: BarChart3 },
   { id: "automation", label: "自动化", short: "自动化", icon: Zap },
+  { id: "toolkit", label: "工具集", short: "工具", icon: Wrench },
 ];
 const inGame = computed(() =>
   ["ChampSelect", "GameStart", "InProgress", "Reconnect"].includes(
