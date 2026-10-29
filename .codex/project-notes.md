@@ -104,3 +104,5 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - ② 2026-10-29 完成：store 的 playerTabs/activeTab（"self" 固定，最多 10 个，换账号或大区清空）；PlayerTabsView 用 v-show 保留各标签实例，关闭才卸载；PlayerTab（原 HistoryWorkspace，git mv）按标签各自加载战绩/段位/评分，筛选只作用于已加载对局（模式按 queueId 再按 mode 判定）。TitleBar 在战绩页显示标签条（中键或 × 关闭）。
 - main/players.ts PlayerStore：备注 player-notes-v1（标签+备注均空即删除）；遇到记录 encounters-v1:{platform}:{owner}，只在 IPC history 返回本人战绩且账号/大区未变时记录，跳过私密/重开/无本人对局与匿名 PUUID，每人最多 30 场、最多 3000 人，读改写串行。IPC 用 zod 校验 PUUID、名字 ≤64、备注 ≤200、标签枚举。
 - 测试：tests/players.test.ts；history 隔离场景 11 项（筛选、新标签与遇到记录、标记保存、复用标签、设置列出标记、关闭后台标签、切号清空且迟到响应无效）。真实客户端隔离实例只读：本人 20 场、144 名公开玩家，同局最多的玩家遇到记录 16 场（均为队友），新标签筛选与遇到行正常。多标签下冒烟断言需限定 .player-tab.active（隐藏标签仍在 DOM）。
+- 2026-10-29 用户反馈战绩页不直观、看不到所有人信息，要求参考 Akari。参照其 MatchCardOverview（折叠卡：英雄+等级、KDA/参团、伤害占比、CS、装备、强化，右侧双方各 5 人始终可见）与 TeamTable（展开按队伍分表）。新增 components/player/MatchCard.vue；normalizeMatch 增读 champLevel、totalDamageTaken、playerAugment1-6（实测国服海克斯对局均有）；强化名称/品质来自 AramHex 目录（store.loadAugmentNames，只读一次，无图标）；召唤师技能暂无图标目录未显示。窄窗口隐藏装备列但始终显示 10 人。真实只读实例：展开后 2 张队伍表、10 行。
+- 注意：父组件的 scoped 样式会作用到子组件根元素，迁移卡片后须删掉 PlayerTab 中旧的 .hw-match 规则。

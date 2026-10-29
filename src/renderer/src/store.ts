@@ -144,3 +144,25 @@ export function acceptState(value: ConnectionState) {
   if (dataHero.value.follow && value.championId !== dataHero.value.id)
     dataHero.value = { id: value.championId, follow: true };
 }
+/** 强化名称与品质（来自 AramHex 目录，只读一次；失败时下次再试）。 */
+export const augmentNames = ref(
+  new Map<number, { name: string; rarity: string }>(),
+);
+let augmentLoading: Promise<void> | null = null;
+export function loadAugmentNames() {
+  if (augmentNames.value.size || augmentLoading) return augmentLoading;
+  augmentLoading = unwrap(api.getAugments(null, "all"))
+    .then((ranking) => {
+      augmentNames.value = new Map(
+        ranking.catalog.map((item) => [
+          item.id,
+          { name: item.name, rarity: item.rarity },
+        ]),
+      );
+    })
+    .catch(() => {})
+    .finally(() => {
+      augmentLoading = null;
+    });
+  return augmentLoading;
+}

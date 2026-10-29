@@ -50,6 +50,11 @@ export function normalizeMatch(raw: any): Match | null {
       cs:
         Number(stats.totalMinionsKilled || 0) +
         Number(stats.neutralMinionsKilled || 0),
+      level: Number(stats.champLevel || 0) || undefined,
+      damageTaken: Number(stats.totalDamageTaken || 0),
+      augments: [1, 2, 3, 4, 5, 6]
+        .map((index) => Number(stats["playerAugment" + index] || 0))
+        .filter((id) => Number.isInteger(id) && id > 0),
     };
   });
   const timestamp = Number(game.gameCreation ?? 0);

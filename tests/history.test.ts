@@ -220,3 +220,36 @@ describe("战绩与分页", () => {
     expect(result.matches).toHaveLength(0);
   });
 });
+it("读取等级、承受伤害与海克斯强化，缺失时不补造", () => {
+  const match = normalizeMatch({
+    gameId: 7,
+    queueId: 2400,
+    gameMode: "KIWI",
+    gameCreation: 1761700000000,
+    gameDuration: 1200,
+    participants: [
+      {
+        participantId: 1,
+        championId: 202,
+        teamId: 100,
+        stats: {
+          win: true,
+          champLevel: 18,
+          totalDamageTaken: 22683,
+          playerAugment1: 1038,
+          playerAugment2: 3018,
+          playerAugment3: 0,
+        },
+      },
+      { participantId: 2, championId: 22, teamId: 200, stats: { win: false } },
+    ],
+    participantIdentities: [],
+  });
+  expect(match?.players[0]).toMatchObject({
+    level: 18,
+    damageTaken: 22683,
+    augments: [1038, 3018],
+  });
+  expect(match?.players[1].level).toBeUndefined();
+  expect(match?.players[1].augments).toEqual([]);
+});

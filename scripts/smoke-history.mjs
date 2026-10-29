@@ -74,13 +74,26 @@ try {
     .getByRole("button", { name: "查看单局详情", exact: true })
     .click();
   await expect(tab().locator(".hw-detail-player")).toHaveCount(3);
+  await expect(tab().locator(".mc-table")).toHaveCount(2);
+  await expect(tab().locator(".mc-table").first()).toContainText("胜利");
+  await expect(tab().locator(".mc-table").first()).toContainText(
+    "测试队友#TEST",
+  );
+  await expect(tab().locator(".mc-table").last()).toContainText("失败");
+  await expect(tab().locator(".mc-table").last()).toContainText(
+    "测试对手#TEST",
+  );
+  report.checks.push(
+    "单局详情按队伍分表，显示每名玩家的 KDA、伤害、经济与补刀",
+  );
   await tab()
     .getByRole("button", { name: "查看详情玩家 测试对手#TEST", exact: true })
     .click();
   await expect(tab().locator(".hw-profile h2")).toHaveText("测试对手");
   await expect(tabs).toHaveCount(3);
   await page.setViewportSize({ width: 1100, height: 850 });
-  await expect(tab().locator(".hw-match-players")).toBeHidden();
+  // 参考 Akari：窄窗口也始终显示双方 10 人，不再隐藏参与者列。
+  await expect(tab().locator(".hw-match-players")).toBeVisible();
   await tab()
     .getByRole("button", { name: "查看单局详情", exact: true })
     .click();
@@ -92,7 +105,7 @@ try {
   await expect(tabs).toHaveCount(3);
   await expect(tab().locator(".hw-player-tag")).toHaveText("好队友");
   await page.setViewportSize({ width: 1440, height: 1000 });
-  report.checks.push("小屏隐藏卡片成员时仍可从单局详情查询玩家");
+  report.checks.push("窄窗口仍显示双方玩家，并可从单局详情查询玩家");
   report.checks.push("重复打开同一玩家复用已有标签并保留其状态");
   await page.getByRole("button", { name: "实时对局", exact: true }).click();
   await expect(page.locator(".live-team")).toHaveCount(2);
@@ -163,12 +176,15 @@ try {
   await expect(tab().locator(".hw-profile h2")).toHaveText("测试新账号");
   await page.waitForTimeout(800);
   await expect(tab().locator(".hw-list-heading h2")).toHaveText("我的近期对局");
-  await expect(tab().locator(".hw-match-players")).toContainText(
-    "测试新账号#TEST",
-  );
-  await expect(tab().locator(".hw-match-players")).not.toContainText(
-    "测试账号#TEST",
-  );
+  await expect(
+    tab().getByRole("button", {
+      name: "查看玩家 测试新账号#TEST",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    tab().getByRole("button", { name: "查看玩家 测试账号#TEST", exact: true }),
+  ).toHaveCount(0);
   report.checks.push("切号清除玩家详情及战绩，迟到响应不能覆盖新账号");
   await page.screenshot({
     path: "artifacts/screenshots/history-records-fixture.png",

@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   ArrowLeft,
   ChevronDown,
-  ChevronRight,
   CircleAlert,
   Filter,
   History,
@@ -14,9 +13,11 @@ import {
 } from "@lucide/vue";
 import { api, unwrap } from "../../api";
 import ChampionIcon from "../ChampionIcon.vue";
+import MatchCard from "./MatchCard.vue";
 import {
   activeTab,
   catalog,
+  loadAugmentNames,
   notify,
   openPlayer,
   state,
@@ -24,7 +25,6 @@ import {
 } from "../../store";
 import {
   date,
-  duration,
   matchMode,
   playerTagList,
   playerTagNames,
@@ -200,8 +200,6 @@ function resetFilter() {
 function showOwnTab() {
   activeTab.value = "self";
 }
-const kda = (player: MatchPlayer) =>
-  [player.kills, player.deaths, player.assists].join(" / ");
 const currentContext = () =>
   `${state.value.status}:${state.value.platform}:${state.value.summoner?.puuid}`;
 
@@ -351,6 +349,7 @@ watch(
 onMounted(() => {
   void loadPlayer();
   void loadExtras();
+  void loadAugmentNames();
 });
 onUnmounted(() => {
   playerEpoch++;
@@ -449,131 +448,18 @@ onUnmounted(() => {
           <h3>已加载的对局里没有符合筛选的记录</h3>
           <p>可以清除筛选，或继续加载更早的对局。</p>
         </div>
-        <article
+        <MatchCard
           v-for="match in shown"
           :key="match.id"
-          class="hw-match"
-          :class="{
-            win: playerFor(match)?.win,
-            loss: playerFor(match) && !playerFor(match)?.win,
-            expanded: detailId === match.id,
-          }"
-        >
-          <div class="hw-match-overview">
-            <div class="hw-match-result">
-              <strong>{{
-                match.remake
-                  ? "重开"
-                  : match.private
-                    ? "隐私对局"
-                    : playerFor(match)
-                      ? playerFor(match)?.win
-                        ? "胜利"
-                        : "失败"
-                      : "对局"
-              }}</strong
-              ><span>{{ matchMode(match) }}</span
-              ><small>{{ date(match.date) }}</small
-              ><small>{{ duration(match.duration) }}</small>
-            </div>
-            <div class="hw-match-champion">
-              <ChampionIcon
-                :champion="champions.get(playerFor(match)?.championId ?? 0)"
-                :size="50"
-              /><span>{{
-                champions.get(playerFor(match)?.championId ?? 0)?.name ||
-                "未提供英雄"
-              }}</span>
-            </div>
-            <div class="hw-match-kda">
-              <strong>{{
-                playerFor(match) ? kda(playerFor(match)!) : "—"
-              }}</strong
-              ><small>K / D / A</small
-              ><span v-if="playerFor(match)"
-                >{{
-                  playerFor(match)!.deaths
-                    ? (
-                        (playerFor(match)!.kills + playerFor(match)!.assists) /
-                        playerFor(match)!.deaths
-                      ).toFixed(2)
-                    : "完美"
-                }}
-                KDA</span
-              >
-            </div>
-            <div class="hw-match-items">
-              <span
-                v-for="(id, index) in playerFor(match)?.items ?? []"
-                :key="index"
-                :title="catalog.items[id]?.name || '未提供装备'"
-                ><img
-                  v-if="id && catalog.items[id]?.icon"
-                  :src="catalog.items[id].icon"
-                  alt=""
-                /><span v-else>{{ id ? "·" : "" }}</span></span
-              >
-            </div>
-            <div class="hw-match-players">
-              <button
-                v-for="player in match.players.slice(0, 10)"
-                :key="player.puuid || player.name + player.championId"
-                :disabled="match.private || !player.puuid"
-                :aria-label="'查看玩家 ' + player.name"
-                :title="player.name"
-                @click="viewPlayer(player)"
-              >
-                <ChampionIcon
-                  :champion="champions.get(player.championId)"
-                  :size="22"
-                /><span>{{ player.name || "身份未公开" }}</span>
-              </button>
-            </div>
-            <button
-              class="hw-match-toggle"
-              :aria-label="
-                detailId === match.id ? '收起单局详情' : '查看单局详情'
-              "
-              :aria-expanded="detailId === match.id"
-              @click="openMatch(match)"
-            >
-              <ChevronDown
-                v-if="detailId === match.id"
-                :size="18"
-              /><ChevronRight v-else :size="18" />
-            </button>
-          </div>
-          <div v-if="detailId === match.id" class="hw-match-detail">
-            <p v-if="busy.detail">正在读取单局详情…</p>
-            <p v-else-if="errors.detail" class="error">{{ errors.detail }}</p>
-            <template v-else-if="detail"
-              ><div class="hw-detail-header">
-                <span>玩家 / 英雄</span><span>KDA</span><span>伤害</span
-                ><span>经济</span>
-              </div>
-              <button
-                v-for="player in detail.players"
-                :key="player.puuid || player.name + player.championId"
-                class="hw-detail-player"
-                :disabled="detail.private || !player.puuid"
-                :aria-label="'查看详情玩家 ' + player.name"
-                @click="viewPlayer(player)"
-              >
-                <span
-                  ><ChampionIcon
-                    :champion="champions.get(player.championId)"
-                    :size="28"
-                  /><b>{{ player.name || "身份未公开" }}</b
-                  ><small v-if="player.puuid === state.summoner?.puuid"
-                    >我</small
-                  ></span
-                ><span>{{ kda(player) }}</span
-                ><span>{{ player.damage.toLocaleString("zh-CN") }}</span
-                ><span>{{ player.gold.toLocaleString("zh-CN") }}</span>
-              </button></template
-            >
-          </div>
-        </article>
+          :match="match"
+          :puuid="target?.puuid ?? ''"
+          :expanded="detailId === match.id"
+          :detail="detailId === match.id ? detail : null"
+          :loading="busy.detail"
+          :error="errors.detail"
+          @toggle="openMatch(match)"
+          @view="viewPlayer"
+        />
         <button
           v-if="history?.hasMore"
           class="hw-load-more"
@@ -828,180 +714,6 @@ onUnmounted(() => {
 .hw-list-heading i {
   font-style: normal;
   margin: 0 8px;
-}
-.hw-match {
-  border: 1px solid var(--line-strong);
-  border-left: 3px solid #5b6970;
-  border-radius: 7px;
-  margin-bottom: 9px;
-  background: #152027;
-  overflow: hidden;
-}
-.hw-match.win {
-  border-left-color: #72b9ad;
-  background: linear-gradient(90deg, #233d3c66, #162126 50%);
-}
-.hw-match.loss {
-  border-left-color: #b76f75;
-  background: linear-gradient(90deg, #462a3266, #162126 50%);
-}
-.hw-match-overview {
-  display: grid;
-  grid-template-columns: 92px 65px 98px minmax(65px, 1fr) 132px 24px;
-  gap: 10px;
-  align-items: center;
-  padding: 13px 9px 13px 13px;
-}
-.hw-match-result {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.hw-match-result strong {
-  font-size: 13px;
-}
-.win .hw-match-result strong {
-  color: #8bd3c1;
-}
-.loss .hw-match-result strong {
-  color: #df9398;
-}
-.hw-match-result span {
-  font-size: 11px;
-  color: var(--secondary);
-}
-.hw-match-result small {
-  font-size: 10px;
-  color: var(--muted);
-}
-.hw-match-champion {
-  display: flex;
-  align-items: center;
-  flex-direction: column;
-  gap: 4px;
-}
-.hw-match-champion > span {
-  font-size: 10px;
-  color: var(--secondary);
-}
-.hw-match-kda {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.hw-match-kda strong {
-  font-size: 15px;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-}
-.hw-match-kda small {
-  font-size: 9px;
-  color: var(--muted);
-  letter-spacing: 1px;
-}
-.hw-match-kda > span {
-  font-size: 11px;
-  color: var(--secondary);
-}
-.hw-match-items {
-  display: grid;
-  grid-template-columns: repeat(4, 23px);
-  gap: 3px;
-}
-.hw-match-items > span {
-  display: flex;
-  width: 23px;
-  height: 23px;
-  background: #07121777;
-  border: 1px solid #c1d0ce10;
-  border-radius: 3px;
-  align-items: center;
-  justify-content: center;
-}
-.hw-match-items img {
-  width: 100%;
-  border-radius: 2px;
-}
-.hw-match-players {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px 8px;
-}
-.hw-match-players button {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  min-width: 0;
-  padding: 0;
-  text-align: left;
-}
-.hw-match-players button > span:last-child {
-  font-size: 9px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--secondary);
-}
-.hw-match-players button:hover > span:last-child {
-  color: var(--gold-light);
-}
-.hw-match-players button:disabled {
-  cursor: default;
-  opacity: 0.7;
-}
-.hw-match-toggle {
-  padding: 4px 0;
-  color: var(--muted);
-}
-.hw-match-detail {
-  border-top: 1px solid var(--line-strong);
-  padding: 13px;
-  background: #07121744;
-}
-.hw-match-detail > p {
-  font-size: 12px;
-  color: var(--muted);
-}
-.hw-detail-header,
-.hw-detail-player {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 95px 65px 65px;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-.hw-detail-header {
-  font-size: 10px;
-  color: var(--muted);
-  padding-bottom: 8px;
-}
-.hw-detail-player {
-  padding: 6px 0;
-  border-top: 1px solid #ffffff06;
-  text-align: left;
-  font-size: 11px;
-}
-.hw-detail-player:hover {
-  background: #cfb47b0a;
-}
-.hw-detail-player > span:first-child {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-.hw-detail-player b {
-  font-weight: 400;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.hw-detail-player small {
-  font-size: 9px;
-  color: var(--green);
-  background: #91c9b31a;
-  border-radius: 3px;
-  padding: 0 4px;
 }
 .hw-load-more {
   display: flex;
@@ -1289,16 +1001,6 @@ onUnmounted(() => {
     grid-template-columns: minmax(0, 1fr) 225px;
     gap: 14px;
   }
-  .hw-match-overview {
-    grid-template-columns: 81px 55px 88px minmax(60px, 1fr) 24px;
-    gap: 8px;
-  }
-  .hw-match-players {
-    display: none;
-  }
-  .hw-match-items {
-    grid-template-columns: repeat(3, 22px);
-  }
 }
 @media (max-width: 800px) {
   .hw-layout {
@@ -1306,16 +1008,6 @@ onUnmounted(() => {
   }
   .hw-profile {
     position: static;
-  }
-  .hw-match-overview {
-    grid-template-columns: 78px 52px 88px minmax(55px, 1fr) 22px;
-  }
-  .hw-match-items {
-    grid-template-columns: repeat(3, 20px);
-  }
-  .hw-match-items > span {
-    width: 20px;
-    height: 20px;
   }
 }
 .hw-filters {

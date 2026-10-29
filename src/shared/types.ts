@@ -194,6 +194,11 @@ export interface MatchPlayer {
   damage: number;
   gold: number;
   cs: number;
+  /** 以下字段来自较新的对局数据，旧缓存可能没有。 */
+  level?: number;
+  damageTaken?: number;
+  /** 海克斯/斗魂等模式选择的强化编号，按选择顺序。 */
+  augments?: number[];
 }
 export interface Match {
   id: string;
