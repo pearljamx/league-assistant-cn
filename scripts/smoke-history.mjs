@@ -18,6 +18,8 @@ const report = {
 let page;
 try {
   page = await application.firstWindow();
+  // Hosted Windows screens can clamp native window sizes; use an explicit layout viewport.
+  await page.setViewportSize({ width: 1440, height: 1000 });
   page.on("pageerror", (error) => report.errors.push(error.message));
   await page.locator(".main-workspace").waitFor();
   await page.locator(".nav-item").filter({ hasText: "战绩查询" }).click();
@@ -37,6 +39,17 @@ try {
     .getByRole("button", { name: "查看详情玩家 测试对手#TEST", exact: true })
     .click();
   await expect(page.locator(".hw-profile h2")).toHaveText("测试对手");
+  await page.setViewportSize({ width: 1100, height: 850 });
+  await expect(page.locator(".hw-match-players")).toBeHidden();
+  await expect(page.locator(".hw-detail-player")).toHaveCount(0);
+  await page.getByRole("button", { name: "查看单局详情", exact: true }).click();
+  await expect(page.locator(".hw-detail-player")).toHaveCount(3);
+  await page
+    .getByRole("button", { name: "查看详情玩家 测试队友#TEST", exact: true })
+    .click();
+  await expect(page.locator(".hw-profile h2")).toHaveText("测试队友");
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  report.checks.push("小屏隐藏卡片成员时仍可从单局详情查询玩家");
   report.checks.push("历史战绩参与者及单局详情参与者可打开玩家资料");
   await page.getByRole("tab", { name: "实时对局", exact: true }).click();
   await expect(page.locator(".hw-live-team")).toHaveCount(2);

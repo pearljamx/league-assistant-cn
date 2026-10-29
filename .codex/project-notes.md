@@ -74,5 +74,6 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - Client.getChampionChoices/chooseChampion 只允许当前备选席或本人进行中的 pick action；二次新会话与阶段/账号重核，不自动锁定。真实写操作仍未验收。
 - HistoryWorkspace.vue 替换战绩页；历史/实时双视图、公开玩家点击、段位/常用英雄/近期表现。LiveGameProvider 读取本机 2999 与公开客户端数据，只按完整身份合并，隐藏玩家不查询。
 - 查分适配：Hexdata 无公开第三方文档，AramHex config200但查分403“请在 AramHex 软件里查询”。保留独立 needs-authorization，不冒用官方标记、不造数值分；证据 docs/companion-reference.md。已询问用户具体 API 文档，尚待答复。
-- npm test 98 项通过；双窗8、战绩5、原界面5项隔离场景通过。实际桌面包验证双窗可见、浏览202跨窗同步、收起/重开、实时页大厅idle；0真实客户端写入。后来只读大厅的实际queueId=3270，mode仍hex；不要把固定queueId当所有版本唯一标识。
+- 用户随后明确回复“目前只有国服使用许可”，无 Hexdata 第三方 API 接入资料；数值分保持待接入，不再重复询问同项已回答的问题。
+- npm test 98 项通过；双窗8、战绩6、原界面5项隔离场景通过。实际桌面包验证双窗可见、浏览202跨窗同步、收起/重开、实时页大厅idle；0真实客户端写入。后来只读大厅的实际queueId=3270，mode仍hex；不要把固定queueId当所有版本唯一标识。
 - 实际用户旧程序正在运行，自动测试使用单独 --user-data-dir，不能为测试终止用户实例。测试脚本按 package.version 选择便携包，校验文件只列当前版本双包，避免旧版混入。
