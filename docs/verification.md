@@ -10,10 +10,11 @@
 - 真实只读实时数据接口：TENCENT、海克斯大厅、queueId=3270，返回idle、0成员。不能据此声明实战十人列表已验收。
 - Hexdata无公开第三方文档；AramHex官方配置200、实际查分403。已按真实错误显示权限状态；[接口核对](companion-reference.md)不代表服务接通。
 - 完整 v0.2.0 Windows 双包构建成功，便携启动验证连接 TENCENT、OCR 就绪；本轮安装/卸载烟测检测到已有正式安装后主动拒绝覆盖，不能将旧版安装验证当作本轮已重跑。打包程序的实际双窗验证使用单独用户目录通过。
+- GitHub Windows 检查[40815051966](https://github.com/pearljamx/league-assistant-cn/actions/runs/40815051966)全流程通过，代码输入为8fa4121；后续仅更新验证/发布记录，不修改运行代码或已构建资源。包含新队列编号回退、宽/窄屏玩家入口验证。
 
 ```text
-6bcb25accd030b2fafd04dd4703062afc4f323a75bba21d1099af1f42ecbf40e  LeagueAssistantCN-0.2.0-x64-Portable.exe
-b958890573bd4ebf88e4f9fef163935c55be909db6cee2f7c1a7498f6ec617b5  LeagueAssistantCN-0.2.0-x64-Setup.exe
+4188e7deaf62fb9f3793db1e83f56dc82f9a627fe0e644390cb485ccdae07831  LeagueAssistantCN-0.2.0-x64-Portable.exe
+9b02873a17608f6ba6b5a18b0ef94f69e7b7fbd9dd42497100e210601fe099f8  LeagueAssistantCN-0.2.0-x64-Setup.exe
 ```
 
 ## v0.1.0 已完成检查
