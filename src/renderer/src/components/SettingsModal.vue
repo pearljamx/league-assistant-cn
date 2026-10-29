@@ -14,6 +14,7 @@ import {
 } from "@lucide/vue";
 import { api } from "../api";
 import BrandMark from "./BrandMark.vue";
+import brandArt from "../assets/brand-art.jpg";
 import { notify, openPlayer, save, settings, state } from "../store";
 import { date, playerTagNames } from "../format";
 import type {
@@ -452,6 +453,7 @@ onMounted(async () => {
         <template v-if="section === 'about'">
           <h3>关于</h3>
           <div class="about-brand">
+            <img class="about-art" :src="brandArt" alt="" />
             <BrandMark :size="64" shimmer />
             <div>
               <strong
@@ -459,7 +461,10 @@ onMounted(async () => {
                 <small>v{{ appVersion }}</small></strong
               >
               <p>把每一次三选一，磨成珍珠。</p>
-              <small>由 PEARLJAM（pearljamx）制作的英雄联盟国服助手</small>
+              <small
+                >品牌形象取自 PEARLJAM 的原画 · 由
+                PEARLJAM（pearljamx）制作的英雄联盟国服助手</small
+              >
             </div>
           </div>
           <div class="setting-row">

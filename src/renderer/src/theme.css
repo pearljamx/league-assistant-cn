@@ -11,10 +11,16 @@
   --gold: #cfb47b;
   --gold-light: #dfc898;
   --green: #91c9b3;
-  /* PEARLJAM HEX 品牌点缀：珍珠白与青紫虹彩。 */
-  --pearl: #f3efe6;
-  --iris-a: #8fd3e8;
-  --iris-b: #b9a3e8;
+  /* PEARLJAM HEX 品牌点缀：取自原画的奶油白、粉红墨迹、紫色背景与金色光晕。 */
+  --pearl: #f6ead6;
+  --iris-a: #f07ab8;
+  --iris-b: #9a55e0;
+  --jam-purple: #6d3aa8;
+  --jam-pink: #f07ab8;
+  --jam-glow: #f2c766;
+  --jam-ink: #1c1024;
+  /* 漫画网点：叠加在背景上的细密圆点。 */
+  --screentone: radial-gradient(#b48ce01a 1px, transparent 1.4px) 0 0 / 6px 6px;
 }
 ::selection {
   background: #b59b5a55;

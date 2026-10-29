@@ -22,7 +22,10 @@ body:has(.companion-shell) {
   padding-left: 10px;
   -webkit-app-region: drag;
   user-select: none;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid #9a55e040;
+  /* 原画风格：网点 + 左侧紫粉光晕。 */
+  background:
+    var(--screentone), linear-gradient(90deg, #6d3aa833, transparent 70%);
 }
 .companion-brand {
   display: flex;
@@ -39,8 +42,8 @@ body:has(.companion-shell) {
   letter-spacing: 0.5px;
   padding: 0 5px;
   border-radius: 3px;
-  color: var(--gold-light);
-  background: #cfb47b18;
+  color: #f6c3dc;
+  background: #f07ab824;
 }
 .window-actions {
   display: flex;
