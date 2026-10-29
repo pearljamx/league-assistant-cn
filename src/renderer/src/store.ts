@@ -144,22 +144,31 @@ export function acceptState(value: ConnectionState) {
   if (dataHero.value.follow && value.championId !== dataHero.value.id)
     dataHero.value = { id: value.championId, follow: true };
 }
-/** 强化名称与品质（来自 AramHex 目录，只读一次；失败时下次再试）。 */
+/** 强化名称、品质与图标：优先 aramgg 目录（含图标），否则用 AramHex 名称；只读一次，失败时下次再试。 */
 export const augmentNames = ref(
-  new Map<number, { name: string; rarity: string }>(),
+  new Map<number, { name: string; rarity: string; iconUrl?: string | null }>(),
 );
 let augmentLoading: Promise<void> | null = null;
 export function loadAugmentNames() {
   if (augmentNames.value.size || augmentLoading) return augmentLoading;
-  augmentLoading = unwrap(api.getAugments(null, "all"))
-    .then((ranking) => {
+  augmentLoading = (async () => {
+    try {
+      const map = await unwrap(api.getAramggAugments());
       augmentNames.value = new Map(
-        ranking.catalog.map((item) => [
-          item.id,
-          { name: item.name, rarity: item.rarity },
-        ]),
+        Object.entries(map).map(([id, row]) => [Number(id), row]),
       );
-    })
+      if (augmentNames.value.size) return;
+    } catch {
+      /* 未配置 Key 或接口暂不可用：退回 AramHex 名称 */
+    }
+    const ranking = await unwrap(api.getAugments(null, "all"));
+    augmentNames.value = new Map(
+      ranking.catalog.map((item) => [
+        item.id,
+        { name: item.name, rarity: item.rarity },
+      ]),
+    );
+  })()
     .catch(() => {})
     .finally(() => {
       augmentLoading = null;

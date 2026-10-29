@@ -11,6 +11,10 @@
   --gold: #cfb47b;
   --gold-light: #dfc898;
   --green: #91c9b3;
+  /* PEARLJAM HEX 品牌点缀：珍珠白与青紫虹彩。 */
+  --pearl: #f3efe6;
+  --iris-a: #8fd3e8;
+  --iris-b: #b9a3e8;
 }
 ::selection {
   background: #b59b5a55;

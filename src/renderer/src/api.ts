@@ -36,6 +36,7 @@ const settings: Settings = {
   overlay: true,
   companionWindows: true,
   closeAction: "ask",
+  hexSource: "aramgg",
   managedRunePage: null,
 };
 const preview: AssistantApi = {
@@ -123,6 +124,21 @@ const preview: AssistantApi = {
   deletePlayerNote: unavailable,
   getEncounters: unavailable,
   clearEncounters: unavailable,
+  getAramggStatus: async () => ({
+    ok: true,
+    data: {
+      configured: false,
+      masked: null,
+      gamePatch: null,
+      dataVersion: null,
+      creditsRemaining: null,
+      creditsDaily: null,
+      error: null,
+    },
+  }),
+  saveAramggKey: unavailable,
+  getAramggChampion: unavailable,
+  getAramggAugments: unavailable,
   onCloseRequest: () => () => {},
   onState: () => () => {},
   onSelection: () => () => {},

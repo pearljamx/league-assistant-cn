@@ -13,9 +13,14 @@ import {
   X,
 } from "@lucide/vue";
 import { api } from "../api";
+import BrandMark from "./BrandMark.vue";
 import { notify, openPlayer, save, settings, state } from "../store";
 import { date, playerTagNames } from "../format";
-import type { CloseAction, PlayerNote } from "../../../shared/types";
+import type {
+  AramggStatus,
+  CloseAction,
+  PlayerNote,
+} from "../../../shared/types";
 import { version as appVersion } from "../../../../package.json";
 
 const emit = defineEmits<{ close: [] }>();
@@ -54,8 +59,33 @@ function viewNote(note: PlayerNote) {
   openPlayer({ puuid: note.puuid, name: note.name, level: null });
   emit("close");
 }
+// aramgg API Key 只写不读：界面只发送新 Key，主进程加密保存，返回状态只含末 4 位。
+const aramgg = ref<AramggStatus | null>(null),
+  keyDraft = ref(""),
+  keyBusy = ref(false),
+  keyError = ref("");
+async function loadAramgg() {
+  const result = await api.getAramggStatus();
+  if (result.ok) aramgg.value = result.data ?? null;
+}
+async function saveKey(clear = false) {
+  keyBusy.value = true;
+  keyError.value = "";
+  const result = await api.saveAramggKey(clear ? null : keyDraft.value.trim());
+  keyBusy.value = false;
+  if (result.ok) {
+    aramgg.value = result.data ?? null;
+    keyDraft.value = "";
+    notify(
+      clear
+        ? "已清除 aramgg API Key"
+        : "已保存 aramgg API Key（加密保存在本机）",
+    );
+  } else keyError.value = result.error || "保存失败";
+}
 onMounted(async () => {
   void loadNotes();
+  void loadAramgg();
   const result = await api.getDisplays();
   if (result.ok && result.data) displays.value = result.data;
 });
@@ -266,6 +296,92 @@ onMounted(async () => {
           <h3>数据与隐私</h3>
           <div class="setting-row">
             <div>
+              <strong>海克斯数据来源</strong>
+              <p>
+                默认 aramgg：腾讯国服推荐顺序与分级 + aramgg
+                全球胜率；也可改用国服 AramHex 样本。
+              </p>
+            </div>
+            <select
+              aria-label="海克斯数据来源"
+              :value="settings.hexSource ?? 'aramgg'"
+              @change="
+                save({
+                  hexSource: ($event.target as HTMLSelectElement).value as
+                    | 'aramgg'
+                    | 'aramhex',
+                })
+              "
+            >
+              <option value="aramgg">aramgg（默认）</option>
+              <option value="aramhex">国服 AramHex 样本</option>
+            </select>
+          </div>
+          <div class="aramgg-key">
+            <div class="aramgg-key-head">
+              <strong>aramgg 数据 API Key</strong>
+              <button
+                class="text-button"
+                @click="api.openExternal('aramgg-developer')"
+              >
+                获取 Key<ArrowUpRight :size="13" />
+              </button>
+            </div>
+            <p>
+              Key 用 Windows
+              加密存储保存在本机，只在主进程使用，不会上传、写入日志或显示完整内容。免费计划每天
+              200 额度，同一数据版本内已读取的英雄不再消耗。
+            </p>
+            <form class="aramgg-key-form" @submit.prevent="saveKey()">
+              <input
+                v-model="keyDraft"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                aria-label="aramgg API Key"
+                :placeholder="
+                  aramgg?.configured
+                    ? '已配置 ' + aramgg.masked + '，输入新 Key 可替换'
+                    : '粘贴 hx_live_ 开头的 Key'
+                "
+              />
+              <button
+                class="button primary"
+                type="submit"
+                :disabled="keyBusy || !keyDraft.trim()"
+              >
+                保存
+              </button>
+              <button
+                v-if="aramgg?.configured"
+                class="button secondary"
+                type="button"
+                :disabled="keyBusy"
+                @click="saveKey(true)"
+              >
+                清除
+              </button>
+            </form>
+            <p class="aramgg-key-status">
+              {{ aramgg?.configured ? "已配置 " + aramgg.masked : "未配置" }}
+              <template v-if="aramgg?.dataVersion">
+                · 数据版本 {{ aramgg.dataVersion }}</template
+              ><template
+                v-if="
+                  aramgg?.creditsRemaining !== null &&
+                  aramgg?.creditsRemaining !== undefined
+                "
+              >
+                · 今日剩余 {{ aramgg.creditsRemaining }} /
+                {{ aramgg.creditsDaily ?? "—" }}</template
+              >
+            </p>
+            <p v-if="keyError || aramgg?.error" class="warning-text small">
+              {{ keyError || aramgg?.error }}
+            </p>
+          </div>
+          <div class="setting-row">
+            <div>
               <strong>客户端连接</strong>
               <p>{{ state.message }}</p>
             </div>
@@ -308,14 +424,35 @@ onMounted(async () => {
         </template>
         <template v-if="section === 'about'">
           <h3>关于</h3>
+          <div class="about-brand">
+            <BrandMark :size="64" shimmer />
+            <div>
+              <strong
+                ><span class="about-pearl">PEARLJAM</span> HEX
+                <small>v{{ appVersion }}</small></strong
+              >
+              <p>把每一次三选一，磨成珍珠。</p>
+              <small>由 PEARLJAM（pearljamx）制作的英雄联盟国服助手</small>
+            </div>
+          </div>
           <div class="setting-row">
             <div>
-              <strong>英雄联盟助手 v{{ appVersion }}</strong>
+              <strong>项目主页</strong>
               <p>面向国服的独立社区项目，代码以 MIT 许可公开。</p>
             </div>
             <button class="text-button" @click="api.openExternal('github')">
-              项目主页<ArrowUpRight :size="14" />
+              GitHub<ArrowUpRight :size="14" />
             </button>
+          </div>
+          <div class="setting-row">
+            <div>
+              <strong>致谢与数据来源</strong>
+              <p>
+                界面参考 LeagueAkari；国服统计来自腾讯 101 与 AramHex（CC BY-NC
+                4.0）；海克斯全球样本来自
+                aramgg.com，经太农海克斯助手数据包分发；强化图标来自本机客户端。
+              </p>
+            </div>
           </div>
           <p class="settings-disclaimer">
             本项目不隶属于腾讯或 Riot

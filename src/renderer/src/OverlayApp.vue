@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { Hexagon } from "@lucide/vue";
+import BrandMark from "./components/BrandMark.vue";
 import { api, unwrap } from "./api";
 import { count, percent, rarityName } from "./format";
 import type {
+  AramggChampion,
   AugmentRanking,
   ConnectionState,
   Recognition,
@@ -13,6 +14,8 @@ import type {
 // 游戏内穿透悬浮窗：始终跟随实时识别，不保留主窗口的手动比较。
 const state = ref<ConnectionState | null>(null);
 const band = ref<Settings["band"]>("all");
+const hexSource = ref<NonNullable<Settings["hexSource"]>>("aramgg");
+const aramgg = ref<AramggChampion | null>(null);
 const recognition = ref<Recognition>({
   status: "idle",
   message: "等待海克斯三选一",
@@ -34,7 +37,15 @@ async function loadRanking() {
   const current = ++epoch;
   error.value = "";
   ranking.value = null;
+  aramgg.value = null;
   const championId = state.value?.championId ?? null;
+  // 默认使用 aramgg；读取失败时仍显示国服 AramHex 样本。
+  if (hexSource.value === "aramgg" && championId)
+    void unwrap(api.getAramggChampion(championId))
+      .then((response) => {
+        if (current === epoch) aramgg.value = response;
+      })
+      .catch(() => {});
   try {
     const response = await unwrap(api.getAugments(championId, band.value));
     if (current === epoch) ranking.value = response;
@@ -72,10 +83,26 @@ watch(
   () => void loadRanking(),
 );
 watch(band, () => void loadRanking());
+watch(hexSource, () => void loadRanking());
+/** aramgg 三张卡：按腾讯国服推荐顺序排序，显示分级、位次与全球胜率。 */
+const aramggCards = computed(() => {
+  const data = aramgg.value;
+  if (!data || data.championId !== state.value?.championId) return [];
+  const rows = recognition.value.augmentIds.map((id) =>
+    data.augments.find((row) => row.id === id),
+  );
+  if (rows.some((row) => !row)) return [];
+  return (rows as NonNullable<(typeof rows)[number]>[]).sort(
+    (a, b) => (a.rank ?? 9999) - (b.rank ?? 9999),
+  );
+});
 onMounted(async () => {
   unsubscribe = [
     api.onState((value) => (state.value = value)),
-    api.onSettings((value) => (band.value = value.band)),
+    api.onSettings((value) => {
+      band.value = value.band;
+      hexSource.value = value.hexSource ?? "aramgg";
+    }),
     api.onRecognition((value) => {
       recognition.value = value;
       if (value.status === "recognized" && !ranking.value) void loadRanking();
@@ -88,8 +115,10 @@ onMounted(async () => {
       api.getRecognition(),
       api.getCatalog(),
     ]);
-  if (currentSettings.ok && currentSettings.data)
+  if (currentSettings.ok && currentSettings.data) {
     band.value = currentSettings.data.band;
+    hexSource.value = currentSettings.data.hexSource ?? "aramgg";
+  }
   if (currentState.ok && currentState.data) state.value = currentState.data;
   if (currentRecognition.ok && currentRecognition.data)
     recognition.value = currentRecognition.data;
@@ -105,10 +134,31 @@ onUnmounted(() => unsubscribe.forEach((stop) => stop()));
 <template>
   <div class="overlay-shell">
     <div class="overlay-heading">
-      <Hexagon :size="18" /><strong>三选一参考</strong
+      <BrandMark :size="18" /><strong>三选一参考</strong
       ><span>{{ heroName || "当前英雄" }}</span>
     </div>
-    <div v-if="cards.length === 3" class="overlay-cards">
+    <div v-if="aramggCards.length === 3" class="overlay-cards">
+      <div
+        v-for="(card, index) in aramggCards"
+        :key="card.id"
+        :class="['overlay-card', { best: index === 0 && card.rank !== null }]"
+      >
+        <span :class="['tier-badge', 't' + (card.tier ?? 0)]">{{
+          card.tier ? "T" + card.tier : "—"
+        }}</span>
+        <div>
+          <strong>{{ card.name }}</strong
+          ><small
+            >国服推荐第 {{ card.rank ?? "—" }} 位 ·
+            {{
+              card.games === null ? "全球样本不足" : count(card.games) + " 场"
+            }}</small
+          >
+        </div>
+        <b>{{ percent(card.winRate) }}</b>
+      </div>
+    </div>
+    <div v-else-if="cards.length === 3" class="overlay-cards">
       <div
         v-for="(card, index) in cards"
         :key="card.augment.id"
@@ -140,8 +190,12 @@ onUnmounted(() => unsubscribe.forEach((stop) => stop()));
       }}
     </p>
     <div class="overlay-footer">
-      国服样本 · {{ ranking?.source.date?.slice(0, 10) || "日期未提供"
-      }}<span>F6 重新识别</span>
+      <template v-if="aramggCards.length === 3"
+        >aramgg · {{ aramgg?.source.dataVersion || "版本未提供" }}</template
+      ><template v-else
+        >国服样本 ·
+        {{ ranking?.source.date?.slice(0, 10) || "日期未提供" }}</template
+      ><span>F6 重新识别</span>
     </div>
   </div>
 </template>

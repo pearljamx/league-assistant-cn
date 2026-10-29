@@ -52,6 +52,7 @@ const settings = {
   autoRecognize: true,
   monitor: 0,
   overlay: true,
+  hexSource: "aramhex",
   managedRunePage: null,
 };
 const idle = () => ({
@@ -74,6 +75,57 @@ const catalog = names.map((name, index) => ({
 const perks = [8005, 9111, 9104, 8014, 8139, 8140, 5008, 5008, 5011];
 const runeCalls = [];
 const notes = new Map();
+// 合成的 aramgg 数据：只用于隔离界面测试，不代表真实统计。
+const aramggStatus = {
+  configured: true,
+  masked: "••••TEST",
+  gamePatch: "fixture",
+  dataVersion: "fixture.1",
+  creditsRemaining: 200,
+  creditsDaily: 200,
+  error: null,
+};
+const aramggRow = (id, rank, tier, winRate) => ({
+  id,
+  name: names[id - 1],
+  rarity: "gold",
+  iconUrl: null,
+  tier,
+  rank,
+  total: 4,
+  winRate,
+  games: winRate === null ? null : 300 + id,
+  pickRate: 0.05,
+});
+const aramggChampion = (championId) => ({
+  source: {
+    name: "aramgg 隔离测试数据",
+    gamePatch: "fixture",
+    dataVersion: "fixture.1",
+    date: "2026-10-29",
+    stale: false,
+  },
+  championId,
+  tier: 2,
+  winRate: 0.51,
+  pickRate: 0.1,
+  augments: [
+    aramggRow(3, 1, 1, 0.56),
+    aramggRow(1, 2, 2, 0.53),
+    aramggRow(4, 3, 3, null),
+    aramggRow(2, 4, 5, 0.47),
+  ],
+  trios: [
+    {
+      ids: [1, 2, 3],
+      names: [names[0], names[1], names[2]],
+      games: 200,
+      winRate: 0.6,
+      pickRate: null,
+    },
+  ],
+  builds: [],
+});
 let recommendationDelay = 0;
 let historyDelay = 0;
 const fixturePlayers = () => [
@@ -146,6 +198,12 @@ const api = {
   saveSettings: (patch) => {
     Object.assign(settings, patch);
     emit("settings", settings);
+    if (
+      Object.keys(patch).every((key) =>
+        ["hexSource", "closeAction"].includes(key),
+      )
+    )
+      return ok(settings);
     recognition = idle();
     emit("recognition", recognition);
     return ok(settings);
@@ -364,6 +422,18 @@ const api = {
     return ok({ puuid, name: other?.name ?? "", total: games.length, games });
   },
   clearEncounters: () => ok(undefined),
+  getAramggStatus: () => ok(aramggStatus),
+  saveAramggKey: () => ok(aramggStatus),
+  getAramggChampion: (championId) => ok(aramggChampion(championId)),
+  getAramggAugments: () =>
+    ok(
+      Object.fromEntries(
+        catalog.map((item) => [
+          item.id,
+          { name: item.name, rarity: item.rarity, iconUrl: null },
+        ]),
+      ),
+    ),
   onCloseRequest: () => () => {},
   onState: subscribe("state"),
   onSettings: subscribe("settings"),

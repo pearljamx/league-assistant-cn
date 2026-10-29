@@ -144,6 +144,18 @@ try {
   report.checks.push(
     "点卡片头像一次即拿到英雄，英雄推荐窗默认显示带评级的海克斯推荐",
   );
+  await info.getByRole("button", { name: "aramgg", exact: true }).click();
+  await expect(info.locator(".aramgg-augment")).toHaveCount(4);
+  await expect(info.locator(".aramgg-augment").first()).toContainText(
+    "测试强化丙",
+  );
+  await expect(info.locator(".info-source")).toContainText(
+    "aramgg 隔离测试数据",
+  );
+  await info.getByRole("button", { name: "国服 AramHex", exact: true }).click();
+  await expect(info.locator(".aramgg-augment")).toHaveCount(0);
+  await expect(info.locator(".compact-augment .grade.S")).toHaveCount(1);
+  report.checks.push("英雄推荐窗可切换 aramgg 与国服 AramHex");
   await picker
     .getByRole("button", { name: "换用测试英雄二", exact: true })
     .click();

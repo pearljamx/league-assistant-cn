@@ -93,6 +93,7 @@ const augmentList = (player: MatchPlayer) =>
     id,
     name: augmentNames.value.get(id)?.name ?? `强化 ${id}`,
     rarity: augmentNames.value.get(id)?.rarity ?? "",
+    iconUrl: augmentNames.value.get(id)?.iconUrl ?? null,
   }));
 const isMe = (player: MatchPlayer) =>
   player.puuid === state.value.summoner?.puuid;
@@ -158,7 +159,9 @@ const isMe = (player: MatchPlayer) =>
             :key="augment.id"
             :class="['mc-augment', augment.rarity]"
             :title="augment.name"
-            >{{ augment.name }}</span
+            ><img v-if="augment.iconUrl" :src="augment.iconUrl" alt="" />{{
+              augment.name
+            }}</span
           >
         </div>
       </div>
@@ -251,7 +254,11 @@ const isMe = (player: MatchPlayer) =>
                     :key="augment.id"
                     :class="['mc-augment', augment.rarity]"
                     :title="augment.name"
-                    >{{ augment.name }}</i
+                    ><img
+                      v-if="augment.iconUrl"
+                      :src="augment.iconUrl"
+                      alt=""
+                    />{{ augment.name }}</i
                   ></span
                 ><small v-else>{{
                   champions.get(player.championId)?.name || "未提供英雄"
@@ -462,6 +469,17 @@ const isMe = (player: MatchPlayer) =>
   text-overflow: ellipsis;
   color: #c9d4d6;
   background: #2a353a;
+}
+.mc-augment {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.mc-augment img {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 .mc-augment.gold {
   color: #f1dca8;

@@ -26,7 +26,7 @@ export function trayMenu(settings: Settings, actions: TrayActions) {
       click: actions.toggleCompanions,
     },
     { type: "separator" },
-    { label: "退出英雄联盟助手", click: actions.quit },
+    { label: "退出 PEARLJAM HEX", click: actions.quit },
   ]);
 }
 
@@ -39,7 +39,7 @@ export function createTray(
     .createFromPath(iconPath)
     .resize({ width: 16, height: 16 });
   const tray = new Tray(icon);
-  tray.setToolTip("英雄联盟助手");
+  tray.setToolTip("PEARLJAM HEX");
   tray.setContextMenu(trayMenu(settings, actions));
   tray.on("click", actions.show);
   return {

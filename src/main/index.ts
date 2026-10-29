@@ -37,6 +37,8 @@ import { clientWindowRect } from "./client-window";
 import { setPublicFetcher } from "./http";
 import { createTray } from "./tray";
 import { PlayerStore, playerTags } from "./players";
+import { SecretStore } from "./secrets";
+import { AramggProvider } from "./providers/aramgg";
 import type { Result } from "../shared/types";
 
 const current = dirname(fileURLToPath(import.meta.url));
@@ -124,6 +126,10 @@ const ownedWindows = () =>
       Boolean(window && !window.isDestroyed()),
   );
 let client: Client, recognition: RecognitionService;
+// 改名为 PEARLJAM HEX 后仍沿用原用户目录，保留设置、玩家标记与缓存；
+// 显式传入 --user-data-dir（隔离测试）时以其为准。
+if (!app.commandLine.hasSwitch("user-data-dir"))
+  app.setPath("userData", join(app.getPath("appData"), "英雄联盟助手"));
 const single = app.requestSingleInstanceLock();
 if (!single) app.quit();
 else {
@@ -163,7 +169,11 @@ else {
         liveGame = new LiveGameProvider(client),
         rating = new SkillRatingProvider(),
         runes = new RuneService(client, storage, tencent),
-        players = new PlayerStore(storage);
+        players = new PlayerStore(storage),
+        aramgg = new AramggProvider(
+          storage,
+          new SecretStore(join(app.getPath("userData"), "local")),
+        );
       recognition = new RecognitionService(
         client,
         storage,
@@ -204,6 +214,7 @@ else {
           overlay: z.boolean().optional(),
           companionWindows: z.boolean().optional(),
           closeAction: z.enum(["ask", "tray", "quit"]).optional(),
+          hexSource: z.enum(["aramgg", "aramhex"]).optional(),
         })
         .strict();
       function handle(
@@ -248,11 +259,16 @@ else {
       handle("state", () => client.state);
       handle("settings", () => storage.getSettings());
       handle("settings-save", async (patch) => {
-        const settings = await storage.updateSettings(
-          settingsPatch.parse(patch),
-        );
+        const parsed = settingsPatch.parse(patch);
+        const settings = await storage.updateSettings(parsed);
         client.updateAutomation();
-        recognition.settingsChanged();
+        // 只改显示来源或关闭方式时保留当前三选一识别结果。
+        if (
+          !Object.keys(parsed).every((key) =>
+            ["hexSource", "closeAction"].includes(key),
+          )
+        )
+          recognition.settingsChanged();
         broadcast("assistant:settings", settings);
         tray?.update(settings);
         updateOverlay();
@@ -387,6 +403,21 @@ else {
         const { owner, platform } = currentOwner();
         return players.encounters(owner, platform, id.parse(value));
       });
+      // API Key 只进不出：界面只能写入或清除，状态里只返回末 4 位。
+      handle("aramgg-status", () => aramgg.status());
+      handle("aramgg-key-save", (value) =>
+        aramgg.setKey(
+          value === null
+            ? null
+            : z
+                .string()
+                .trim()
+                .regex(/^[\w-]{16,200}$/, "API Key 格式不正确")
+                .parse(value),
+        ),
+      );
+      handle("aramgg-champion", (value) => aramgg.champion(hero.parse(value)));
+      handle("aramgg-augments", () => aramgg.augments());
       handle("encounters-clear", () => {
         const { owner, platform } = currentOwner();
         return players.clearEncounters(owner, platform);
@@ -429,10 +460,11 @@ else {
         hexdata: "https://hexdata.com.cn/matchmaking-position",
         github: "https://github.com/pearljamx/league-assistant-cn",
         "data-license": "https://github.com/czgreat/aramhex-data",
+        "aramgg-developer": "https://data.dtodo.cn/developer.html",
       };
       handle("open", (value) => {
         const target = z
-          .enum(["hexdata", "github", "data-license"])
+          .enum(["hexdata", "github", "data-license", "aramgg-developer"])
           .parse(value);
         if (target === "hexdata") openHexdata(urls.hexdata);
         else return shell.openExternal(urls[target]);
@@ -464,7 +496,7 @@ else {
         minWidth: 1040,
         minHeight: 700,
         backgroundColor: "#0d1215",
-        title: "英雄联盟助手",
+        title: "PEARLJAM HEX",
         icon: join(root, "resources/icon.png"),
         autoHideMenuBar: true,
         // 自定义标题栏：保留 Windows 原生最小化/最大化/关闭按钮与贴靠布局。
@@ -536,8 +568,8 @@ else {
           backgroundColor: "#10181b",
           title:
             role === "picker"
-              ? "Mini · 英雄联盟助手"
-              : "英雄推荐 · 英雄联盟助手",
+              ? "Mini · PEARLJAM HEX"
+              : "英雄推荐 · PEARLJAM HEX",
           webPreferences,
         });
         if (role === "picker") pickerWindow = window;

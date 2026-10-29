@@ -1,6 +1,6 @@
-# 英雄联盟助手 · League Assistant CN
+# PEARLJAM HEX · 英雄联盟国服助手
 
-面向 Windows 10/11 x64 和英雄联盟国服的独立桌面工作台。使用 Electron、Vue 3、TypeScript；海克斯三选一在本机用 RapidOCR 识别。
+由 PEARLJAM（pearljamx）制作，面向 Windows 10/11 x64 和英雄联盟国服的独立桌面工作台（原名「英雄联盟助手」）。使用 Electron、Vue 3、TypeScript；海克斯三选一在本机用 RapidOCR 识别。
 
 ## 功能
 
@@ -13,7 +13,8 @@
 - 战绩页参考 LeagueAkari 的玩家标签：“我的战绩”固定在标题栏最前，打开的其他玩家各占一个标签（最多 10 个，可关闭，换账号时清空），各自保留战绩、筛选与展开状态。战绩卡片参考 Akari：折叠时显示本人英雄与等级、KDA 与参团率、伤害占比、经济补刀、装备、海克斯强化，以及双方 10 人；展开后按队伍分表列出每名玩家的等级、强化、KDA、伤害（含占比条）、承受伤害、经济、补刀和装备。战绩可按模式（海克斯 / 极地大乱斗 / 排位 / 峡谷其他）、胜负和英雄筛选，并显示筛选后的场次、胜率与场均 KDA；侧栏显示段位、常用英雄、常一起玩的玩家。“对局”页展示选人与游戏中的双方玩家。只按公开 PUUID 或完整 Riot ID 查询，隐藏身份不推断。
 - 遇到过的玩家与玩家标记：读取本人战绩时在本机记录同局的公开玩家，查看他人时显示与你同局的次数、队友/对手及当时胜负；可给玩家打“好队友 / 需留意 / 不想再遇 / 朋友”标签并写备注。两者只保存在本机，可在设置的“玩家标记”中查看、删除或清除本账号的遇到记录。
 - 腾讯 101 国服出装、常规符文、技能优先级和逐级加点；符文预览后仅写入助手专用页面。
-- AramHex 海克斯英雄及强化排行，支持娱乐、中分、前 5% 分组；展示日期、样本与低样本标记。
+- 海克斯强化排行默认使用 aramgg 官方数据 API：顺序与 T1～T5 分级来自腾讯国服推荐（经 aramgg 整理），胜率来自 aramgg 客户端上传的全球样本，满 255 场才显示；另有三强化组合与多流派出装。可在设置、英雄数据页或英雄推荐窗切换为国服 AramHex 样本（娱乐、中分、前 5% 分组，展示日期、样本与低样本标记）。
+- 品牌：PEARLJAM HEX「珍珠 × 海克斯」标识、启动动画、应用与托盘图标（resources/brand，由 scripts/build-brand.mjs 生成）。
 - 海克斯三选一识别、F6 快捷键、手动纠正与穿透点击的悬浮窗。
 - Hexdata 数值分目前**没有第三方接口**；Mini 小窗的“官方查分”在助手内打开 Hexdata 官方查分页（独立会话，需自行登录 Hexdata 账号），助手不读取其登录信息或页面数据，也不生成其他分数替代。
 
@@ -29,6 +30,7 @@
 2. 启动助手，等待左下角出现“国服客户端已连接”。
 3. 在“自动化”页、标题栏或 Mini 小窗按需开启自动接受；进入选人后在“对局”页查看双方玩家和备选席。
 4. 在“英雄数据”选择模式、分路与统计段位，从左侧英雄榜选择英雄，预览符文后再确认应用；海克斯模式可切到“海克斯强化”。
+   首次使用 aramgg 数据：在 [aramgg 开发者页](https://data.dtodo.cn/developer.html) 申请免费 API Key，粘贴到“设置 → 数据与隐私 → aramgg 数据 API Key”并保存。未配置或额度用完时，悬浮窗和英雄推荐窗自动改用国服 AramHex，英雄数据页会提示并可一键切换。
 5. 海克斯对局使用无边框或窗口模式；在设置开启自动检测，或在三选一出现时按 F6。认不准时重试或手动选择。
 
 客户端连接后自动出现 Mini 小窗，英雄选择时再出现英雄信息窗；两者默认贴靠客户端窗口（一侧放不下时分放两侧），拖动后保持位置。Mini 窗点击头像直接选用/换用，右键头像只同步英雄信息窗；仅本人的英雄卡片、当前备选席或本人尚未锁定的选人回合可以换。关闭按钮只收起至下一阶段，可在侧栏或设置的“多窗口”重新打开或关闭自动显示。助手不会因此自动发起匹配。
@@ -112,7 +114,8 @@ OCR 只在截取区域像素完全一致时复用结果；新画面或识别失�
 - 强化按结算持有统计，受任务替换、选取偏差等影响；高胜率不是因果，也不是本局获胜概率。
 - 排序使用 `(胜场 + 英雄基准胜率 × 300) / (场次 + 300)`。原始胜率、平滑值、样本分别展示，保留来源的低样本标记。
 - 分组别名不重复显示；版本和活动规则不混用。更新按提供方的 manifest 与 SHA-256 校验，失败保留已成功的缓存。
-- 外部数据保持其原许可。AramHex 为 **CC BY-NC 4.0，禁止未经授权的商业使用**。
+- aramgg：推荐顺序、分级与英雄整体胜率来自腾讯国服；强化与组合胜率来自 aramgg 客户端上传的全球样本，不是国服全部对局，样本不足 255 场的胜率留空。页面标明数据版本与统计日期。免费计划每天 200 额度、每分钟 60 次；同一数据版本内已读取的英雄只请求一次，网络失败时显示已标注“上次缓存”的数据。
+- 外部数据保持其原许可。AramHex 为 **CC BY-NC 4.0，禁止未经授权的商业使用**；aramgg 数据按其开发者条款使用。
 
 海斗分不会由战绩临时估算。Hexdata 没有公开第三方接入文档；本次核对的 AramHex 查分接口返回 HTTP 403“请在 AramHex 软件里查询”。已适配其状态、分区、百分位与限流协议，但真实查分尚未接通；弹窗和玩家资料显示提供方状态。AramHex 若获准返回的是区内位次，不能当作 Hexdata 数值分。实现参考与接口证据见 [companion-reference.md](docs/companion-reference.md)。
 
@@ -120,11 +123,13 @@ OCR 只在截取区域像素完全一致时复用结果；新画面或识别失�
 
 客户端 token 只在主进程内存中使用，绝不发给统计站点、渲染进程或日志。窗口只暴露白名单操作；普通符文页和游戏程序文件不由助手修改。
 
-用户配置、战绩缓存、符文备份、玩家标记与遇到记录位于 Electron 用户数据目录（本机实测为 `%APPDATA%\英雄联盟助手\local`），不上传、不提交仓库。可在关闭助手后删除缓存文件清理本地查询记录；保留 `settings.json` 可保留偏好与专用符文页归属。
+aramgg API Key 只能在设置里写入，用 Windows 加密存储（Electron safeStorage）保存在 `local/aramgg-key.bin`，只在主进程请求时使用；界面只显示末 4 位，不写入日志、缓存、仓库或安装包。
+
+用户配置、战绩缓存、符文备份、玩家标记与遇到记录位于 Electron 用户数据目录（本机实测为 `%APPDATA%\英雄联盟助手\local`；改名为 PEARLJAM HEX 后仍沿用该目录，升级不丢设置），不上传、不提交仓库。可在关闭助手后删除缓存文件清理本地查询记录；保留 `settings.json` 可保留偏好与专用符文页归属。
 
 项目不隶属于腾讯或 Riot Games，不表示获得官方背书。维护者已确认取得国服适用许可，并决定发布完整功能预览版；许可适用范围与持续有效性由维护者管理。[Riot 通用开发者政策](https://developer.riotgames.com/docs/lol#game-policy)对强化胜率展示有限制，数据开源许可不能代替运营方许可。具体第三方声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-英雄联盟助手 is not endorsed by Riot Games and does not reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games and all associated properties are trademarks or registered trademarks of Riot Games, Inc.
+PEARLJAM HEX is not endorsed by Riot Games and does not reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games and all associated properties are trademarks or registered trademarks of Riot Games, Inc.
 
 ## 项目结构
 
@@ -141,6 +146,6 @@ scripts/              构建、校验和只读实机检查
 
 ## 参考与许可
 
-架构与国服协议研究参考 [LeagueAkari](https://github.com/LeagueAkari/LeagueAkari)、[winer](https://github.com/sunerpy/winer)、[AramHex](https://github.com/czgreat/aramhex) 与 [Nyx0ra 海克斯助手](https://github.com/Nyx0ra/lol-aram-mayhem-hextech-helper)。
+架构与国服协议研究参考 [LeagueAkari](https://github.com/LeagueAkari/LeagueAkari)、[winer](https://github.com/sunerpy/winer)、[AramHex](https://github.com/czgreat/aramhex)、[Nyx0ra 海克斯助手](https://github.com/Nyx0ra/lol-aram-mayhem-hextech-helper) 与太农海克斯助手（经作者授权参考，未复制其代码或数据）；海克斯数据接入 [aramgg](https://aramgg.com/) 官方数据 API。
 
 原创代码 MIT；游戏素材、模型和统计数据保留各自许可，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

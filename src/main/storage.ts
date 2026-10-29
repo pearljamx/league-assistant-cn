@@ -15,6 +15,7 @@ export const defaults: Settings = {
   overlay: true,
   companionWindows: true,
   closeAction: "ask",
+  hexSource: "aramgg",
   managedRunePage: null,
 };
 export class Storage {
@@ -126,6 +127,8 @@ export function validateSettings(
     }
     next.companionSize = size;
   }
+  if (["aramgg", "aramhex"].includes(patch.hexSource ?? ""))
+    next.hexSource = patch.hexSource!;
   if (["ask", "tray", "quit"].includes(patch.closeAction ?? ""))
     next.closeAction = patch.closeAction!;
   if (["rift", "aram", "hex"].includes(patch.mode ?? ""))

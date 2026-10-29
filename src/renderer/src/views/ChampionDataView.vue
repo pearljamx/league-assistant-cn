@@ -32,6 +32,8 @@ import SourceBadge from "../components/SourceBadge.vue";
 import ChampionIcon from "../components/ChampionIcon.vue";
 import EquipmentRow from "../components/EquipmentRow.vue";
 import type {
+  AramggAugment,
+  AramggChampion,
   AugmentRanking,
   HeroStat,
   Overview,
@@ -140,6 +142,66 @@ const visibleAugments = computed(() =>
         .includes(augmentSearch.value.toLowerCase()),
   ),
 );
+/** 海克斯数据来源：默认 aramgg，未选择时按 aramgg 处理。 */
+const hexSource = computed(() => settings.value.hexSource ?? "aramgg");
+const aramgg = ref<AramggChampion | null>(null);
+let aramggEpoch = 0;
+async function loadAramgg() {
+  const epoch = ++aramggEpoch;
+  aramgg.value = null;
+  errors.value.aramgg = "";
+  const id = selectedId.value;
+  if (!id || hexSource.value !== "aramgg") return;
+  busy.value.aramgg = true;
+  try {
+    const response = await unwrap(api.getAramggChampion(id));
+    if (epoch === aramggEpoch) aramgg.value = response;
+  } catch (error) {
+    if (epoch === aramggEpoch) errors.value.aramgg = (error as Error).message;
+  } finally {
+    if (epoch === aramggEpoch) busy.value.aramgg = false;
+  }
+}
+const aramggRows = computed(() =>
+  (aramgg.value?.augments ?? []).filter(
+    (row) =>
+      (rarity.value === "all" || row.rarity === rarity.value) &&
+      row.name.toLowerCase().includes(augmentSearch.value.toLowerCase()),
+  ),
+);
+/** 识别或手动选择的三张强化，按 aramgg 的国服推荐顺序排序。 */
+const aramggCards = computed(() => {
+  const data = aramgg.value;
+  if (!data) return [];
+  const ids = manualComparison.value
+    ? data.championId === selectedId.value
+      ? manualComparison.value
+      : []
+    : state.value.championId && data.championId !== state.value.championId
+      ? []
+      : recognition.value.augmentIds;
+  return ids
+    .map(
+      (id) =>
+        data.augments.find((row) => row.id === id) ??
+        ({
+          id,
+          name:
+            ranking.value?.catalog.find((row) => row.id === id)?.name ??
+            `强化 ${id}`,
+          rarity:
+            ranking.value?.catalog.find((row) => row.id === id)?.rarity ?? "",
+          iconUrl: null,
+          tier: null,
+          rank: null,
+          total: null,
+          winRate: null,
+          games: null,
+          pickRate: null,
+        } satisfies AramggAugment),
+    )
+    .sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999));
+});
 const recognizedCards = computed(() =>
   (manualComparison.value
     ? ranking.value?.championId === selectedId.value
@@ -222,8 +284,10 @@ async function loadRanking() {
 }
 function refresh() {
   void loadOverview();
-  if (tab.value === "hex") void loadRanking();
-  else void loadRecommendation();
+  if (tab.value === "hex") {
+    void loadRanking();
+    void loadAramgg();
+  } else void loadRecommendation();
 }
 async function applyRunes() {
   const preview = runePreview.value;
@@ -306,11 +370,16 @@ watch(
 );
 watch(selectedId, () => {
   clearManualComparison();
+  if (tab.value === "hex") void loadAramgg();
   if (tab.value === "build") void loadRecommendation();
   else void loadRanking();
 });
 watch(globalRank, () => void loadRanking());
+watch(hexSource, () => {
+  if (tab.value === "hex") void loadAramgg();
+});
 watch(tab, (value) => {
+  if (value === "hex") void loadAramgg();
   if (value === "build" && !recommendation.value) void loadRecommendation();
   if (value === "hex") void loadRanking();
 });
@@ -673,14 +742,36 @@ defineExpose({ refresh });
         </template>
 
         <template v-if="tab === 'hex'">
+          <div class="hex-source" role="group" aria-label="海克斯数据来源">
+            <span>数据来源</span>
+            <div class="compact-tabs">
+              <button
+                :class="{ active: hexSource === 'aramgg' }"
+                :aria-pressed="hexSource === 'aramgg'"
+                @click="save({ hexSource: 'aramgg' })"
+              >
+                aramgg（默认）</button
+              ><button
+                :class="{ active: hexSource === 'aramhex' }"
+                :aria-pressed="hexSource === 'aramhex'"
+                @click="save({ hexSource: 'aramhex' })"
+              >
+                国服 AramHex 样本
+              </button>
+            </div>
+          </div>
           <div class="notice">
-            <Hexagon :size="17" /><span
+            <Hexagon :size="17" /><span v-if="hexSource === 'aramgg'"
+              >推荐顺序与分级来自腾讯国服（经 aramgg 整理）；胜率为 aramgg
+              客户端上传的全球样本，满 255
+              场才显示。高胜率不代表本局获胜概率。</span
+            ><span v-else
               >海克斯榜使用独立的国服海斗样本。分组是推算水平，不是官方排位段位；与
               Hexdata 海斗分不直接互换。</span
             >
           </div>
           <div class="hex-toolbar">
-            <div class="compact-tabs">
+            <div v-if="hexSource === 'aramhex'" class="compact-tabs">
               <button
                 :class="{ active: !globalRank }"
                 @click="globalRank = false"
@@ -748,7 +839,49 @@ defineExpose({ refresh });
             <ScanLine :size="16" /><span>{{ recognition.message }}</span>
           </div>
           <div
-            v-if="recognizedCards.length === 3 && !globalRank"
+            v-if="hexSource === 'aramgg' && aramggCards.length === 3"
+            class="comparison-grid aramgg-cards"
+          >
+            <div
+              v-for="(card, index) in aramggCards"
+              :key="card.id"
+              :class="[
+                'comparison-card',
+                { recommended: index === 0 && card.rank !== null },
+              ]"
+            >
+              <span v-if="index === 0 && card.rank !== null" class="best-label"
+                ><Check :size="12" />国服推荐优先</span
+              ><span :class="['rarity-label', card.rarity]">{{
+                rarityName(card.rarity)
+              }}</span>
+              <h3>
+                <img v-if="card.iconUrl" :src="card.iconUrl" alt="" />{{
+                  card.name
+                }}
+              </h3>
+              <strong
+                ><span :class="['tier-badge', 't' + (card.tier ?? 0)]">{{
+                  card.tier ? "T" + card.tier : "—"
+                }}</span>
+                第 {{ card.rank ?? "—" }} / {{ card.total ?? "—" }}</strong
+              >
+              <p>
+                全球胜率 {{ percent(card.winRate) }} ·
+                {{
+                  card.games === null
+                    ? "样本不足 255 场"
+                    : count(card.games) + " 场"
+                }}
+              </p>
+            </div>
+          </div>
+          <div
+            v-if="
+              hexSource === 'aramhex' &&
+              recognizedCards.length === 3 &&
+              !globalRank
+            "
             class="comparison-grid"
           >
             <div
@@ -788,7 +921,7 @@ defineExpose({ refresh });
               >
             </div>
           </div>
-          <div class="rank-filters">
+          <div v-if="hexSource === 'aramgg'" class="rank-filters">
             <div class="compact-tabs">
               <button
                 v-for="item in [
@@ -812,55 +945,223 @@ defineExpose({ refresh });
               />
             </div>
           </div>
-          <div v-if="busy.ranking" class="loading-state tall">
-            <RefreshCw
-              :size="22"
-              class="spinning"
-            />正在读取并校验国服海克斯数据
-          </div>
-          <div v-if="errors.ranking" class="notice warning">
-            <CircleAlert :size="17" />{{ errors.ranking }}
-          </div>
-          <section v-if="ranking && !busy.ranking" class="panel rank-panel">
-            <div class="table-header augment-columns">
-              <span>排名 / 强化</span><span>品质</span><span>原始胜率</span
-              ><span>平滑胜率</span><span>样本场次</span>
+          <template v-if="hexSource === 'aramgg'">
+            <div v-if="busy.aramgg" class="loading-state tall">
+              <RefreshCw :size="22" class="spinning" />正在读取 aramgg
+              海克斯数据
             </div>
-            <div
-              v-for="(row, index) in visibleAugments"
-              :key="row.augment.id"
-              class="augment-row augment-columns"
-            >
-              <div class="augment-name">
-                <span class="list-rank">{{
-                  String(index + 1).padStart(2, "0")
-                }}</span
-                ><Hexagon :size="21" :class="row.augment.rarity" /><strong>{{
-                  row.augment.name
-                }}</strong>
-              </div>
-              <span :class="['rarity-label', row.augment.rarity]">{{
-                rarityName(row.augment.rarity)
-              }}</span
-              ><strong class="accent-text tabular">{{
-                percent(row.winRate)
-              }}</strong
-              ><span class="tabular">{{ percent(row.smoothedWinRate) }}</span
-              ><span class="sample-count"
-                >{{ count(row.games)
-                }}<span v-if="row.lowSample" class="low-sample"
-                  >低样本</span
-                ></span
+            <div v-else-if="errors.aramgg" class="notice warning">
+              <CircleAlert :size="17" /><span>{{ errors.aramgg }}</span
+              ><button
+                class="text-button"
+                @click="save({ hexSource: 'aramhex' })"
               >
+                暂用国服 AramHex
+              </button>
             </div>
-            <div v-if="!visibleAugments.length" class="empty-state">
-              <p>没有符合筛选条件的强化</p>
+            <section v-else-if="aramgg" class="panel rank-panel aramgg-panel">
+              <div class="table-header aramgg-columns">
+                <span>国服推荐顺序 / 强化</span><span>品质</span
+                ><span>分级</span><span>全球胜率</span><span>样本</span
+                ><span>选取率</span>
+              </div>
+              <div
+                v-for="row in aramggRows"
+                :key="row.id"
+                class="augment-row aramgg-row aramgg-columns"
+              >
+                <div class="augment-name">
+                  <span class="list-rank">{{
+                    row.rank === null ? "—" : String(row.rank).padStart(2, "0")
+                  }}</span
+                  ><img
+                    v-if="row.iconUrl"
+                    :src="row.iconUrl"
+                    alt=""
+                    class="aramgg-icon"
+                  /><Hexagon v-else :size="21" :class="row.rarity" /><strong>{{
+                    row.name
+                  }}</strong>
+                </div>
+                <span :class="['rarity-label', row.rarity]">{{
+                  rarityName(row.rarity)
+                }}</span
+                ><span :class="['tier-badge', 't' + (row.tier ?? 0)]">{{
+                  row.tier ? "T" + row.tier : "—"
+                }}</span
+                ><strong class="accent-text tabular">{{
+                  percent(row.winRate)
+                }}</strong
+                ><span class="tabular">{{
+                  row.games === null ? "不足 255" : count(row.games)
+                }}</span
+                ><span class="tabular">{{ percent(row.pickRate) }}</span>
+              </div>
+              <div v-if="!aramggRows.length" class="empty-state">
+                <p>没有符合筛选条件的强化</p>
+              </div>
+              <p class="source-note aramgg-source">
+                {{ aramgg.source.name }} · 版本
+                {{ aramgg.source.dataVersion || "未提供" }} · 统计日期
+                {{ aramgg.source.date || "未提供" }} · 英雄整体胜率
+                {{ percent(aramgg.winRate) }}（腾讯国服）<span
+                  v-if="aramgg.source.stale"
+                >
+                  · 网络不可用，显示上次缓存</span
+                >
+              </p>
+            </section>
+            <div
+              v-if="aramgg && (aramgg.trios.length || aramgg.builds.length)"
+              class="aramgg-extras"
+            >
+              <section v-if="aramgg.trios.length" class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <h2>三强化组合</h2>
+                    <p>同一玩家选中的三个强化，至少 151 场</p>
+                  </div>
+                </div>
+                <div
+                  v-for="(trio, index) in aramgg.trios"
+                  :key="index"
+                  class="aramgg-trio"
+                >
+                  <span>{{
+                    trio.names.join(" + ") || trio.ids.join(" + ")
+                  }}</span
+                  ><strong class="tabular">{{ percent(trio.winRate) }}</strong
+                  ><small>{{ count(trio.games) }} 场</small>
+                </div>
+              </section>
+              <section v-if="aramgg.builds.length" class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <h2>出装流派</h2>
+                    <p>当前补丁的多流派出装与技能</p>
+                  </div>
+                </div>
+                <div
+                  v-for="(item, index) in aramgg.builds"
+                  :key="index"
+                  class="aramgg-build"
+                >
+                  <div class="aramgg-build-head">
+                    <strong>{{ item.tags || "流派 " + (index + 1) }}</strong
+                    ><span
+                      >胜率 {{ percent(item.winRate) }} · 选取
+                      {{ percent(item.pickRate) }} ·
+                      {{ count(item.games) }} 场</span
+                    >
+                  </div>
+                  <div v-if="item.core[0]" class="aramgg-items">
+                    <small>核心</small
+                    ><span
+                      v-for="id in item.core[0].ids"
+                      :key="id"
+                      :title="catalog.items[id]?.name"
+                      ><img
+                        v-if="catalog.items[id]?.icon"
+                        :src="catalog.items[id].icon"
+                        alt=""
+                    /></span>
+                    <small class="muted">{{
+                      percent(item.core[0].winRate)
+                    }}</small>
+                  </div>
+                  <div v-if="item.spells[0]" class="aramgg-line">
+                    <small>召唤师技能</small
+                    >{{ item.spells[0].names.join(" + ") }}
+                    <small class="muted">{{
+                      percent(item.spells[0].winRate)
+                    }}</small>
+                  </div>
+                  <div v-if="item.skills[0]" class="aramgg-line">
+                    <small>加点</small
+                    ><span class="aramgg-skills">{{
+                      item.skills[0].keys.join(" ")
+                    }}</span>
+                  </div>
+                </div>
+              </section>
             </div>
-            <SourceBadge :source="ranking.source" />
-          </section>
-          <p v-if="ranking" class="source-disclaimer">
-            {{ ranking.exposure }} · 平滑仅用于排序；高胜率不代表本局获胜概率。
-          </p>
+          </template>
+          <div v-if="hexSource === 'aramhex'" class="rank-filters">
+            <div class="compact-tabs">
+              <button
+                v-for="item in [
+                  { id: 'all', name: '全部品质' },
+                  { id: 'silver', name: '白银' },
+                  { id: 'gold', name: '黄金' },
+                  { id: 'prismatic', name: '棱彩' },
+                ]"
+                :key="item.id"
+                :class="{ active: rarity === item.id }"
+                @click="rarity = item.id"
+              >
+                {{ item.name }}
+              </button>
+            </div>
+            <div class="search-field">
+              <Search :size="16" /><input
+                v-model="augmentSearch"
+                placeholder="搜索强化名称"
+                aria-label="搜索强化"
+              />
+            </div>
+          </div>
+          <template v-if="hexSource === 'aramhex'">
+            <div v-if="busy.ranking" class="loading-state tall">
+              <RefreshCw
+                :size="22"
+                class="spinning"
+              />正在读取并校验国服海克斯数据
+            </div>
+            <div v-if="errors.ranking" class="notice warning">
+              <CircleAlert :size="17" />{{ errors.ranking }}
+            </div>
+            <section v-if="ranking && !busy.ranking" class="panel rank-panel">
+              <div class="table-header augment-columns">
+                <span>排名 / 强化</span><span>品质</span><span>原始胜率</span
+                ><span>平滑胜率</span><span>样本场次</span>
+              </div>
+              <div
+                v-for="(row, index) in visibleAugments"
+                :key="row.augment.id"
+                class="augment-row augment-columns"
+              >
+                <div class="augment-name">
+                  <span class="list-rank">{{
+                    String(index + 1).padStart(2, "0")
+                  }}</span
+                  ><Hexagon :size="21" :class="row.augment.rarity" /><strong>{{
+                    row.augment.name
+                  }}</strong>
+                </div>
+                <span :class="['rarity-label', row.augment.rarity]">{{
+                  rarityName(row.augment.rarity)
+                }}</span
+                ><strong class="accent-text tabular">{{
+                  percent(row.winRate)
+                }}</strong
+                ><span class="tabular">{{ percent(row.smoothedWinRate) }}</span
+                ><span class="sample-count"
+                  >{{ count(row.games)
+                  }}<span v-if="row.lowSample" class="low-sample"
+                    >低样本</span
+                  ></span
+                >
+              </div>
+              <div v-if="!visibleAugments.length" class="empty-state">
+                <p>没有符合筛选条件的强化</p>
+              </div>
+              <SourceBadge :source="ranking.source" />
+            </section>
+            <p v-if="ranking" class="source-disclaimer">
+              {{ ranking.exposure }} ·
+              平滑仅用于排序；高胜率不代表本局获胜概率。
+            </p>
+          </template>
         </template>
       </div>
     </div>

@@ -41,6 +41,7 @@ app.whenReady().then(async () => {
     monitor: 0,
     overlay: true,
     companionWindows: true,
+    hexSource: "aramhex",
     managedRunePage: null,
   };
   const selection = {

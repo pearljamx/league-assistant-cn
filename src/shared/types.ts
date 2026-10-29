@@ -218,6 +218,66 @@ export interface MatchPage {
   warning: string | null;
   fetchedAt: string;
 }
+/** aramgg.com 数据 API（data.dtodo.cn）的海克斯大乱斗数据，已在主进程校验与精简。 */
+export interface AramggSource {
+  name: string;
+  gamePatch: string | null;
+  dataVersion: string | null;
+  date: string | null;
+  stale: boolean;
+}
+export interface AramggAugment {
+  id: number;
+  name: string;
+  rarity: string;
+  iconUrl: string | null;
+  /** 腾讯国服推荐分级 1–5，1 最强。 */
+  tier: number | null;
+  /** 腾讯国服推荐顺序，从 1 开始。 */
+  rank: number | null;
+  total: number | null;
+  /** aramgg 客户端上传的全球胜率，不足 255 场时为空。 */
+  winRate: number | null;
+  games: number | null;
+  pickRate: number | null;
+}
+export interface AramggOption {
+  ids: number[];
+  names: string[];
+  games: number | null;
+  winRate: number | null;
+  pickRate: number | null;
+}
+export interface AramggBuild {
+  tags: string;
+  games: number | null;
+  winRate: number | null;
+  pickRate: number | null;
+  core: AramggOption[];
+  starting: AramggOption[];
+  situational: AramggOption[];
+  spells: AramggOption[];
+  skills: { keys: string[]; games: number | null; winRate: number | null }[];
+}
+export interface AramggChampion {
+  source: AramggSource;
+  championId: number;
+  tier: number | null;
+  winRate: number | null;
+  pickRate: number | null;
+  augments: AramggAugment[];
+  trios: AramggOption[];
+  builds: AramggBuild[];
+}
+export interface AramggStatus {
+  configured: boolean;
+  masked: string | null;
+  gamePatch: string | null;
+  dataVersion: string | null;
+  creditsRemaining: number | null;
+  creditsDaily: number | null;
+  error: string | null;
+}
 /** 玩家标记只保存在本机：好队友 / 需留意 / 不想再遇 / 朋友。 */
 export type PlayerTag = "good" | "watch" | "avoid" | "friend";
 export interface PlayerNote {
@@ -268,6 +328,8 @@ export interface Settings {
     Record<"picker" | "info", { width: number; height: number }>
   >;
   closeAction?: CloseAction;
+  /** 海克斯数据来源：默认 aramgg（需 API Key），可切回国服 AramHex 样本。 */
+  hexSource?: "aramgg" | "aramhex";
   managedRunePage: { id: number; puuid: string } | null;
 }
 export type CloseAction = "ask" | "tray" | "quit";
@@ -344,7 +406,7 @@ export interface AssistantApi {
   ): Promise<Result<{ pageId: number }>>;
   getRating(riotId?: string): Promise<Result<SkillRating>>;
   openExternal(
-    target: "hexdata" | "github" | "data-license",
+    target: "hexdata" | "github" | "data-license" | "aramgg-developer",
   ): Promise<Result<void>>;
   getRecognition(): Promise<Result<Recognition>>;
   scanAugments(): Promise<Result<Recognition>>;
@@ -363,6 +425,14 @@ export interface AssistantApi {
   listPlayerNotes(): Promise<Result<PlayerNote[]>>;
   deletePlayerNote(puuid: string): Promise<Result<void>>;
   getEncounters(puuid: string): Promise<Result<EncounterSummary>>;
+  getAramggStatus(): Promise<Result<AramggStatus>>;
+  saveAramggKey(key: string | null): Promise<Result<AramggStatus>>;
+  getAramggChampion(championId: number): Promise<Result<AramggChampion>>;
+  getAramggAugments(): Promise<
+    Result<
+      Record<number, { name: string; rarity: string; iconUrl: string | null }>
+    >
+  >;
   clearEncounters(): Promise<Result<void>>;
   onCloseRequest(callback: () => void): () => void;
   onState(callback: (state: ConnectionState) => void): () => void;

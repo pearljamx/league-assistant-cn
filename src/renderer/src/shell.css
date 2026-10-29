@@ -16,6 +16,7 @@
 }
 .side-brand {
   height: 40px;
+  filter: drop-shadow(0 0 6px #8fd3e826);
   width: 100%;
   display: flex;
   align-items: center;
@@ -63,7 +64,12 @@
   bottom: 10px;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: var(--gold);
+  background: linear-gradient(
+    180deg,
+    var(--gold-light),
+    var(--iris-a),
+    var(--iris-b)
+  );
 }
 .nav-dot {
   position: absolute;
@@ -797,4 +803,205 @@ button.title-tab.active svg {
   .live-teams {
     grid-template-columns: 1fr;
   }
+}
+/* 关于页品牌区 */
+.about-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  margin: 6px 0 10px;
+  border-radius: 10px;
+  border: 1px solid #cfb47b33;
+  background:
+    radial-gradient(circle at 12% 50%, #8fd3e81a 0, transparent 40%),
+    radial-gradient(circle at 30% 80%, #b9a3e814 0, transparent 40%), #121b1f;
+}
+.about-brand strong {
+  font-family: "Bahnschrift", "Microsoft YaHei UI", sans-serif;
+  font-size: 20px;
+  letter-spacing: 3px;
+  color: var(--gold);
+}
+.about-brand strong small {
+  margin-left: 6px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.about-pearl {
+  background: linear-gradient(
+    100deg,
+    var(--pearl),
+    var(--iris-a) 55%,
+    var(--iris-b)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.about-brand p {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--secondary);
+}
+.about-brand > div > small {
+  font-size: 10px;
+  color: var(--muted);
+}
+/* aramgg 海克斯数据 */
+.hex-source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-family: "Bahnschrift", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--muted);
+  background: #1c2629;
+}
+.tier-badge.t1 {
+  color: #1b1408;
+  background: #e8c06a;
+}
+.tier-badge.t2 {
+  color: #10201a;
+  background: #91c9b3;
+}
+.tier-badge.t3 {
+  color: #d8e4f0;
+  background: #3e5a78;
+}
+.tier-badge.t4 {
+  color: var(--secondary);
+  background: #2b3438;
+}
+.tier-badge.t5 {
+  color: #e0a3a6;
+  background: #3a2526;
+}
+.aramgg-columns {
+  grid-template-columns: minmax(220px, 2.4fr) 0.7fr 0.6fr 0.8fr 0.8fr 0.7fr;
+}
+.aramgg-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+}
+.aramgg-source {
+  margin-top: 10px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.aramgg-cards h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.aramgg-cards h3 img {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+}
+.aramgg-cards .comparison-card > strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.aramgg-extras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.aramgg-trio {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px 70px;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.aramgg-trio small {
+  color: var(--muted);
+  text-align: right;
+}
+.aramgg-build {
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.aramgg-build-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.aramgg-build-head span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.aramgg-items,
+.aramgg-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+}
+.aramgg-items small,
+.aramgg-line small:first-child {
+  min-width: 64px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.aramgg-items img {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+}
+.aramgg-skills {
+  font-family: "Bahnschrift", sans-serif;
+  letter-spacing: 2px;
+  color: var(--gold-light);
+}
+.aramgg-key {
+  padding: 12px 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+.aramgg-key-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.aramgg-key p {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.aramgg-key-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.aramgg-key-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.aramgg-key-status {
+  color: var(--secondary) !important;
 }

@@ -79,6 +79,42 @@ try {
   ).toHaveCount(0);
   await expect(page.locator(".comparison-card")).toHaveCount(0);
   report.checks.push("迟到手选响应不能覆盖新英雄");
+  await page
+    .getByRole("button", { name: "选择英雄 测试英雄一", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "aramgg（默认）", exact: true })
+    .click();
+  const aramggRows = page.locator(".aramgg-row");
+  await expect(aramggRows).toHaveCount(4);
+  await expect(aramggRows.first()).toContainText("测试强化丙");
+  await expect(aramggRows.first().locator(".tier-badge")).toHaveText("T1");
+  await expect(aramggRows.filter({ hasText: "测试强化丁" })).toContainText(
+    "不足 255",
+  );
+  await page.evaluate(() =>
+    window.rendererFixture.recognition({
+      status: "recognized",
+      augmentIds: [2, 3, 4],
+      gameWindow: { x: 0, y: 0, width: 1920, height: 1080 },
+    }),
+  );
+  await expect(page.locator(".aramgg-cards .comparison-card")).toHaveCount(3);
+  await expect(
+    page.locator(".aramgg-cards .comparison-card").first(),
+  ).toContainText("测试强化丙");
+  await expect(page.locator(".aramgg-source")).toContainText(
+    "aramgg 隔离测试数据",
+  );
+  await page
+    .getByRole("button", { name: "国服 AramHex 样本", exact: true })
+    .click();
+  await expect(aramggRows).toHaveCount(0);
+  await expect(page.locator(".augment-row")).toHaveCount(4);
+  await expect(page.locator(".comparison-card")).toHaveCount(3);
+  report.checks.push(
+    "aramgg 按国服推荐顺序排序，样本不足不显示胜率；切换来源保留识别结果",
+  );
   await page.evaluate(() => {
     window.rendererFixture.state({
       phase: "Lobby",

@@ -83,7 +83,7 @@ export function bytesRequest(
         rejectUnauthorized: !options.loopback,
         headers: {
           Accept: "application/json",
-          "User-Agent": "LeagueAssistantCN/0.1",
+          "User-Agent": "PearljamHex/0.3 (LeagueAssistantCN)",
           ...(body
             ? {
                 "Content-Type": "application/json",
@@ -142,4 +142,51 @@ export function bytesRequest(
     if (body) request.write(body);
     request.end();
   });
+}
+/**
+ * 公开 HTTPS JSON 请求，返回数据与响应头（用于读取第三方额度信息）。
+ * 走 Electron 系统代理；非 2xx 抛出带状态码的错误。
+ */
+export async function publicJson<T = unknown>(
+  url: string,
+  options: {
+    headers?: Record<string, string>;
+    timeout?: number;
+    maxBytes?: number;
+  } = {},
+): Promise<{ data: T; headers: Headers }> {
+  if (new URL(url).protocol !== "https:")
+    throw new AppError("数据请求必须使用 HTTPS。", "INVALID_REMOTE_URL");
+  const fetcher = publicFetcher ?? fetch;
+  let response: Response;
+  try {
+    response = await fetcher(url, {
+      headers: { Accept: "application/json", ...options.headers },
+      redirect: "error",
+      signal: AbortSignal.timeout(options.timeout ?? 15000),
+    });
+  } catch {
+    throw new AppError(
+      "公开数据连接失败，请检查系统代理或稍后重试。",
+      "NETWORK_ERROR",
+    );
+  }
+  if (!response.ok)
+    throw new AppError(
+      `数据服务返回 ${response.status}。`,
+      `HTTP_${response.status}`,
+      response.status,
+    );
+  const limit = options.maxBytes ?? 8 * 1024 * 1024;
+  const body = Buffer.from(await response.arrayBuffer());
+  if (body.length > limit)
+    throw new AppError("返回的数据超过限制。", "RESPONSE_TOO_LARGE");
+  try {
+    return {
+      data: JSON.parse(body.toString("utf8")) as T,
+      headers: response.headers,
+    };
+  } catch {
+    throw new AppError("数据格式无法解析，请稍后刷新。", "INVALID_RESPONSE");
+  }
 }

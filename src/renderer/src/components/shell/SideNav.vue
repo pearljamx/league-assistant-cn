@@ -6,10 +6,10 @@ import {
   History,
   Radio,
   Settings2,
-  Swords,
   Zap,
 } from "@lucide/vue";
 import { api } from "../../api";
+import BrandMark from "../BrandMark.vue";
 import { notify, page, settings, state, type PageId } from "../../store";
 
 defineEmits<{ settings: [] }>();
@@ -39,8 +39,8 @@ async function openCompanions() {
 
 <template>
   <aside class="side-nav">
-    <div class="side-brand" title="英雄联盟助手">
-      <Swords :size="21" :stroke-width="1.6" />
+    <div class="side-brand" title="PEARLJAM HEX">
+      <BrandMark :size="26" />
     </div>
     <nav aria-label="主导航">
       <button

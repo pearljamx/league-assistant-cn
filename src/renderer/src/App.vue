@@ -15,6 +15,7 @@ import TitleBar from "./components/shell/TitleBar.vue";
 import SettingsModal from "./components/SettingsModal.vue";
 import SearchPane from "./components/SearchPane.vue";
 import CloseConfirm from "./components/CloseConfirm.vue";
+import BrandSplash from "./components/shell/BrandSplash.vue";
 import PlayerTabsView from "./views/PlayerTabsView.vue";
 import LiveGameView from "./views/LiveGameView.vue";
 import ChampionDataView from "./views/ChampionDataView.vue";
@@ -78,5 +79,6 @@ onUnmounted(() => {
     <SettingsModal v-if="settingsOpen" @close="settingsOpen = false" />
     <SearchPane v-if="searchOpen" @close="searchOpen = false" />
     <CloseConfirm v-if="closeOpen" @close="closeOpen = false" />
+    <BrandSplash />
   </div>
 </template>

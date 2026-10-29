@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { ArrowUpRight, ChevronRight, RefreshCw, Swords, X } from "@lucide/vue";
 import { api, unwrap } from "../api";
 import ChampionIcon from "../components/ChampionIcon.vue";
+import BrandMark from "../components/BrandMark.vue";
 import {
   act,
   catalog,
@@ -15,6 +16,7 @@ import {
   modeName,
   percent,
   query,
+  save,
   settings,
   startCompanion,
   state,
@@ -23,6 +25,7 @@ import {
 } from "./useCompanion";
 import { augmentGrades } from "../../../shared/augment-grade";
 import type {
+  AramggChampion,
   AugmentRanking,
   AugmentStat,
   ItemOption,
@@ -41,6 +44,16 @@ const loading = ref(false),
 /** 尚未拿到英雄时，对比本人卡片英雄的胜率与前几名强化。 */
 const cardIds = ref<number[]>([]);
 const cardRankings = ref<Record<string, AugmentRanking | null>>({});
+/** aramgg（默认）与国服 AramHex 同时读取；aramgg 不可用时立即显示 AramHex。 */
+const hexSource = computed(() => settings.value.hexSource ?? "aramgg");
+const aramgg = ref<AramggChampion | null>(null),
+  aramggError = ref("");
+const cardAramgg = ref<Record<number, AramggChampion | null>>({});
+const useAramgg = computed(
+  () => hexSource.value === "aramgg" && Boolean(aramgg.value),
+);
+const aramggTop = computed(() => (aramgg.value?.augments ?? []).slice(0, 10));
+const aramggBuild = computed(() => aramgg.value?.builds[0] ?? null);
 let epoch = 0,
   cardEpoch = 0;
 let stop = () => {},
@@ -90,6 +103,8 @@ async function loadHero() {
     id = companion.value.championId;
   recommendation.value = null;
   ranking.value = null;
+  aramgg.value = null;
+  aramggError.value = "";
   runePreview.value = null;
   dataError.value = "";
   loading.value = false;
@@ -101,12 +116,21 @@ async function loadHero() {
       if (version === epoch) recommendation.value = result;
     }),
   ];
-  if (value.mode === "hex")
+  if (value.mode === "hex") {
     requests.push(
       unwrap(api.getAugments(id, value.band)).then((result) => {
         if (version === epoch) ranking.value = result;
       }),
     );
+    if (hexSource.value === "aramgg")
+      void unwrap(api.getAramggChampion(id))
+        .then((result) => {
+          if (version === epoch) aramgg.value = result;
+        })
+        .catch((reason) => {
+          if (version === epoch) aramggError.value = (reason as Error).message;
+        });
+  }
   const results = await Promise.allSettled(requests);
   if (version !== epoch) return;
   const rejected = results.find((result) => result.status === "rejected");
@@ -141,6 +165,18 @@ async function loadCards() {
     if (version === cardEpoch) cardIds.value = [];
     return;
   }
+  if (hexSource.value === "aramgg")
+    for (const id of cardIds.value) {
+      if (id in cardAramgg.value) continue;
+      cardAramgg.value[id] = null;
+      void unwrap(api.getAramggChampion(id))
+        .then((result) => {
+          cardAramgg.value[id] = result;
+        })
+        .catch(() => {
+          delete cardAramgg.value[id];
+        });
+    }
   const band = settings.value.band;
   for (const id of cardIds.value) {
     const key = `${id}:${band}`;
@@ -184,6 +220,11 @@ watch(
     void loadHero();
   },
 );
+watch(hexSource, () => {
+  cardAramgg.value = {};
+  void loadHero();
+  void loadCards();
+});
 watch(
   () => state.value.mode,
   (mode) => {
@@ -226,7 +267,9 @@ onUnmounted(() => {
 <template>
   <div class="companion-shell info">
     <header class="companion-titlebar">
-      <div class="companion-brand"><Swords :size="15" />英雄推荐</div>
+      <div class="companion-brand">
+        <BrandMark :size="16" />英雄推荐<span>PEARLJAM HEX</span>
+      </div>
       <div class="window-actions">
         <button aria-label="打开工作台" title="打开主窗口" @click="act('main')">
           <ArrowUpRight :size="15" />
@@ -254,7 +297,20 @@ onUnmounted(() => {
           <strong>{{ heroes.get(id)?.name || id }}</strong>
           <span>{{ percent(stats.get(id)?.winRate) }}</span>
         </div>
-        <ol v-if="cardTop(id).length">
+        <ol v-if="hexSource === 'aramgg' && cardAramgg[id]">
+          <li v-for="row in cardAramgg[id]!.augments.slice(0, 3)" :key="row.id">
+            <b :class="['tier-badge', 't' + (row.tier ?? 0)]">{{
+              row.tier ? "T" + row.tier : "—"
+            }}</b
+            ><img
+              v-if="row.iconUrl"
+              :src="row.iconUrl"
+              alt=""
+              class="mini-icon"
+            />{{ row.name }}<small>{{ percent(row.winRate) }}</small>
+          </li>
+        </ol>
+        <ol v-else-if="cardTop(id).length">
           <li v-for="item in cardTop(id)" :key="item.row.augment.id">
             <b :class="['grade', item.grade]">{{ item.grade }}</b
             >{{ item.row.augment.name
@@ -311,29 +367,103 @@ onUnmounted(() => {
         </div>
         <template v-else-if="tab === 'augments'">
           <div
-            v-for="row in topAugments"
-            :key="row.augment.id"
-            class="compact-augment"
+            class="info-source-switch"
+            role="group"
+            aria-label="海克斯数据来源"
           >
-            <b :class="['grade', gradeOf(row)]">{{ gradeOf(row) }}</b
-            ><strong
-              ><i :class="['augment-dot', row.augment.rarity]"></i
-              >{{ row.augment.name }}</strong
-            ><span>{{ percent(row.winRate) }}</span
-            ><small
-              >{{ row.games ?? "—" }} 场{{
-                row.lowSample ? " · 低样本" : ""
-              }}</small
+            <button
+              :class="{ active: hexSource === 'aramgg' }"
+              @click="save({ hexSource: 'aramgg' })"
             >
+              aramgg
+            </button>
+            <button
+              :class="{ active: hexSource === 'aramhex' }"
+              @click="save({ hexSource: 'aramhex' })"
+            >
+              国服 AramHex
+            </button>
           </div>
-          <p v-if="!topAugments.length" class="compact-empty">
-            当前分组暂无强化统计
+          <p
+            v-if="hexSource === 'aramgg' && aramggError"
+            class="info-note warn"
+          >
+            aramgg 暂不可用：{{ aramggError }} 现显示国服 AramHex。
           </p>
-          <p v-else class="info-note">
-            评级为本英雄强化内按平滑胜率的相对排名，低样本不定级；不是获胜概率。
-          </p>
+          <template v-if="useAramgg">
+            <div
+              v-for="row in aramggTop"
+              :key="row.id"
+              class="compact-augment aramgg-augment"
+            >
+              <b :class="['tier-badge', 't' + (row.tier ?? 0)]">{{
+                row.tier ? "T" + row.tier : "—"
+              }}</b
+              ><strong
+                ><img
+                  v-if="row.iconUrl"
+                  :src="row.iconUrl"
+                  alt=""
+                  class="mini-icon"
+                /><i v-else :class="['augment-dot', row.rarity]"></i
+                >{{ row.name }}</strong
+              ><span>{{ percent(row.winRate) }}</span
+              ><small>{{
+                row.games === null ? "样本不足" : row.games + " 场"
+              }}</small>
+            </div>
+            <p class="info-note">
+              顺序与分级：腾讯国服推荐（经 aramgg）；胜率：aramgg
+              全球上传样本，满 255 场才显示。
+            </p>
+          </template>
+          <template v-else>
+            <div
+              v-for="row in topAugments"
+              :key="row.augment.id"
+              class="compact-augment"
+            >
+              <b :class="['grade', gradeOf(row)]">{{ gradeOf(row) }}</b
+              ><strong
+                ><i :class="['augment-dot', row.augment.rarity]"></i
+                >{{ row.augment.name }}</strong
+              ><span>{{ percent(row.winRate) }}</span
+              ><small
+                >{{ row.games ?? "—" }} 场{{
+                  row.lowSample ? " · 低样本" : ""
+                }}</small
+              >
+            </div>
+            <p v-if="!topAugments.length" class="compact-empty">
+              当前分组暂无强化统计
+            </p>
+            <p v-else class="info-note">
+              评级为本英雄强化内按平滑胜率的相对排名，低样本不定级；不是获胜概率。
+            </p>
+          </template>
         </template>
         <template v-else-if="tab === 'build'">
+          <section
+            v-if="state.mode === 'hex' && useAramgg && aramggBuild"
+            class="info-row"
+          >
+            <h3>aramgg 流派 · {{ aramggBuild.tags || "推荐" }}</h3>
+            <div v-if="aramggBuild.core[0]" class="info-items">
+              <img
+                v-for="id in aramggBuild.core[0].ids"
+                :key="id"
+                :src="catalog.items[id]?.icon"
+                :title="catalog.items[id]?.name"
+                alt=""
+              /><span>{{ percent(aramggBuild.core[0].winRate) }}</span>
+            </div>
+            <p v-if="aramggBuild.spells[0]" class="compact-label">
+              召唤师技能：{{ aramggBuild.spells[0].names.join(" + ") }}
+            </p>
+            <p v-if="aramggBuild.skills[0]" class="compact-label">
+              加点：{{ aramggBuild.skills[0].keys.slice(0, 9).join(" ") }} …
+            </p>
+          </section>
           <section v-for="group in itemRows" :key="group.name" class="info-row">
             <h3>{{ group.name }}</h3>
             <div
@@ -408,7 +538,9 @@ onUnmounted(() => {
       <p class="info-source">
         {{
           tab === "augments"
-            ? ranking?.source.name
+            ? useAramgg
+              ? aramgg?.source.name + " · " + (aramgg?.source.dataVersion ?? "")
+              : ranking?.source.name
             : recommendation?.source.name
         }}
         ·

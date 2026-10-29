@@ -1,5 +1,5 @@
 appId: cn.leagueassistant.desktop
-productName: 英雄联盟助手
+productName: PEARLJAM HEX
 directories:
   output: dist
 files:
@@ -22,16 +22,16 @@ extraResources:
       - "**/*"
 win:
   icon: resources/icon.ico
-  executableName: LeagueAssistantCN
+  executableName: PearljamHex
   target:
     - nsis
     - portable
 nsis:
-  artifactName: LeagueAssistantCN-${version}-${arch}-Setup.${ext}
+  artifactName: PearljamHex-${version}-${arch}-Setup.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   deleteAppDataOnUninstall: false
 portable:
-  artifactName: LeagueAssistantCN-${version}-${arch}-Portable.${ext}
+  artifactName: PearljamHex-${version}-${arch}-Portable.${ext}

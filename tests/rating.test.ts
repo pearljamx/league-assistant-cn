@@ -65,7 +65,7 @@ describe("AramHex 公开位次和 Hexdata 分数分开", () => {
     const [url, options] = vi.mocked(jsonRequest).mock.calls[1];
     expect(new URL(url).searchParams.get("id")).toBe("测试#12345");
     expect(options?.headers).not.toHaveProperty("Authorization");
-    expect(options?.headers?.["User-Agent"]).toContain("LeagueAssistantCN");
+    expect(options?.headers?.["User-Agent"]).toContain("PearljamHex");
   });
   it("没有当前大区时不使用别区位次，多区且未指定也不任意选择", () => {
     expect(parseAramHexPosition(raw, "HN2")).toMatchObject({

@@ -36,6 +36,7 @@ body:has(.companion-shell) {
 }
 .companion-brand span {
   font-size: 9px;
+  letter-spacing: 0.5px;
   padding: 0 5px;
   border-radius: 3px;
   color: var(--gold-light);
@@ -667,4 +668,35 @@ body:has(.companion-shell) {
 }
 .companion-modal-actions .compact-primary {
   margin-left: 0;
+}
+.info-source-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  background: #0f171a;
+  width: max-content;
+}
+.info-source-switch button {
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.info-source-switch button.active {
+  color: var(--gold-light);
+  background: #cfb47b1c;
+}
+.mini-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.aramgg-augment {
+  grid-template-columns: 28px minmax(0, 1fr) 46px 64px;
+}
+.info-note.warn {
+  color: #e0a3a6;
 }

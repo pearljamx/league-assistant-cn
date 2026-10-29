@@ -13,7 +13,7 @@ const env = { ...process.env };
 const { version } = JSON.parse(await readFile("package.json", "utf8"));
 delete env.ELECTRON_RUN_AS_NODE;
 const child = spawn(
-  resolve(`dist/LeagueAssistantCN-${version}-x64-Portable.exe`),
+  resolve(`dist/PearljamHex-${version}-x64-Portable.exe`),
   [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${resolve("artifacts/portable-smoke-profile")}`,

@@ -6,7 +6,7 @@ import { jsonRequest } from "../http";
 const RANK_API = "https://aramhex.com/api/rank";
 const RANK_PAGE = "https://aramhex.com/rank/";
 const CONFIG_API = "https://aramhex.com/config.json";
-const HEADERS = { "User-Agent": "LeagueAssistantCN/0.1 (public rank lookup)" };
+const HEADERS = { "User-Agent": "PearljamHex/0.3 (public rank lookup)" };
 
 export function normalizeRatingRiotId(value: string) {
   return value

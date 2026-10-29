@@ -6,11 +6,11 @@ import {
   Radio,
   RefreshCw,
   Search,
-  Swords,
   X,
 } from "@lucide/vue";
 import { api, unwrap } from "../api";
 import ChampionIcon from "../components/ChampionIcon.vue";
+import BrandMark from "../components/BrandMark.vue";
 import {
   act,
   companion,
@@ -222,7 +222,7 @@ onUnmounted(() => {
   <div class="companion-shell mini">
     <header class="companion-titlebar">
       <div class="companion-brand">
-        <Swords :size="15" />英雄联盟助手<span>Mini</span>
+        <BrandMark :size="16" />PEARLJAM HEX<span>Mini</span>
       </div>
       <div class="window-actions">
         <button aria-label="打开工作台" title="打开主窗口" @click="act('main')">
@@ -311,7 +311,7 @@ onUnmounted(() => {
             ? modeName
             : state.summoner
               ? state.summoner.gameName
-              : "英雄联盟助手"
+              : "PEARLJAM HEX"
         }}</strong>
         <span :class="['mini-phase', state.phase]">{{ status.title }}</span>
         <small>{{ status.detail }}</small>
