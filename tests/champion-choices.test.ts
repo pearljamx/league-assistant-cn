@@ -229,3 +229,38 @@ it("写前第二次读取发现卡片变化，拒绝旧卡片", async () => {
   expect(writes(request)).toEqual([]);
   client.stop();
 });
+it("队友留下的备选席英雄在卡片阶段列出但不可换，选人结束后可直接换用", async () => {
+  const { client, request } = setup("hex");
+  let phase = "BAN_PICK";
+  request.mockImplementation(async (path: string, method = "GET") => {
+    if (method !== "GET") return undefined;
+    if (path.endsWith("gameflow-phase")) return "ChampSelect";
+    if (path.endsWith("subset-champion-list")) return [143, 76];
+    if (path.endsWith("pickable-champion-ids")) return [143, 76, 51];
+    return {
+      ...cardSession(76),
+      benchChampions: [{ championId: 51 }, { championId: 143 }],
+      timer: { phase },
+    };
+  });
+  expect(await client.getChampionChoices()).toMatchObject({
+    kind: "bench",
+    championIds: [143],
+    cards: [143, 76],
+    waiting: [51],
+  });
+  await expect(client.chooseChampion(51)).rejects.toMatchObject({
+    code: "CHAMPION_UNAVAILABLE",
+  });
+  expect(writes(request)).toEqual([]);
+  phase = "FINALIZATION";
+  expect(await client.getChampionChoices()).toMatchObject({
+    kind: "bench",
+    championIds: [51, 143],
+  });
+  await client.chooseChampion(51);
+  expect(writes(request)).toEqual([
+    ["/lol-champ-select/v1/session/bench/swap/51", "POST"],
+  ]);
+  client.stop();
+});

@@ -9,32 +9,55 @@ import {
   companion,
   error,
   hero,
+  heroes,
   loadOverview,
   message,
   modeName,
   percent,
   query,
+  settings,
   startCompanion,
   state,
   stats,
   view,
 } from "./useCompanion";
+import { augmentGrades } from "../../../shared/augment-grade";
 import type {
   AugmentRanking,
+  AugmentStat,
   ItemOption,
   Recommendation,
 } from "../../../shared/types";
 
+// 英雄推荐窗：仅在英雄选择阶段出现。海克斯模式默认展示该英雄的强化推荐。
+type Tab = "augments" | "build" | "runes";
 const recommendation = ref<Recommendation | null>(null),
   ranking = ref<AugmentRanking | null>(null);
-const tab = ref<"build" | "runes" | "augments">("build");
+const tab = ref<Tab>(state.value.mode === "hex" ? "augments" : "build");
 const loading = ref(false),
   dataError = ref(""),
   applying = ref(false),
   runePreview = ref<number | null>(null);
-let epoch = 0;
-let stop = () => {};
+/** 尚未拿到英雄时，对比本人卡片英雄的胜率与前几名强化。 */
+const cardIds = ref<number[]>([]);
+const cardRankings = ref<Record<string, AugmentRanking | null>>({});
+let epoch = 0,
+  cardEpoch = 0;
+let stop = () => {},
+  poll: ReturnType<typeof setInterval> | undefined;
 
+const tabs = computed<{ id: Tab; name: string }[]>(() =>
+  state.value.mode === "hex"
+    ? [
+        { id: "augments", name: "海克斯" },
+        { id: "build", name: "出装" },
+        { id: "runes", name: "符文" },
+      ]
+    : [
+        { id: "build", name: "出装" },
+        { id: "runes", name: "符文" },
+      ],
+);
 const itemRows = computed(() => {
   const rec = recommendation.value;
   if (!rec) return [];
@@ -46,6 +69,22 @@ const itemRows = computed(() => {
 });
 const items = (row: ItemOption) =>
   row.ids.map((id) => catalog.value.items[id]).filter(Boolean);
+const ranked = (data: AugmentRanking | null | undefined) =>
+  [...(data?.augments ?? [])].sort(
+    (a, b) => (b.smoothedWinRate ?? -1) - (a.smoothedWinRate ?? -1),
+  );
+const topAugments = computed(() => ranked(ranking.value).slice(0, 10));
+const grades = computed(() => augmentGrades(ranking.value?.augments ?? []));
+const cardTop = (id: number) => {
+  const data = cardRankings.value[`${id}:${settings.value.band}`];
+  const gradeMap = augmentGrades(data?.augments ?? []);
+  return ranked(data)
+    .filter((row) => gradeMap.has(row.augment.id))
+    .slice(0, 3)
+    .map((row) => ({ row, grade: gradeMap.get(row.augment.id)! }));
+};
+const gradeOf = (row: AugmentStat) => grades.value.get(row.augment.id) ?? "—";
+
 async function loadHero() {
   const version = ++epoch,
     id = companion.value.championId;
@@ -78,6 +117,44 @@ async function loadHero() {
         : "统计暂时无法读取";
   loading.value = false;
 }
+async function loadCards() {
+  const version = ++cardEpoch;
+  if (
+    state.value.phase !== "ChampSelect" ||
+    companion.value.championId ||
+    state.value.mode !== "hex"
+  ) {
+    cardIds.value = [];
+    return;
+  }
+  try {
+    const choices = await unwrap(api.getChampionChoices());
+    if (version !== cardEpoch) return;
+    cardIds.value = (
+      choices.cards?.length
+        ? choices.cards
+        : choices.kind === "subset"
+          ? choices.championIds
+          : []
+    ).slice(0, 4);
+  } catch {
+    if (version === cardEpoch) cardIds.value = [];
+    return;
+  }
+  const band = settings.value.band;
+  for (const id of cardIds.value) {
+    const key = `${id}:${band}`;
+    if (key in cardRankings.value) continue;
+    cardRankings.value[key] = null;
+    void unwrap(api.getAugments(id, band))
+      .then((result) => {
+        cardRankings.value[key] = result;
+      })
+      .catch(() => {
+        delete cardRankings.value[key];
+      });
+  }
+}
 async function applyRunes() {
   const index = runePreview.value,
     id = companion.value.championId,
@@ -108,23 +185,40 @@ watch(
   },
 );
 watch(
+  () => state.value.mode,
+  (mode) => {
+    if (mode === "hex") tab.value = "augments";
+  },
+);
+watch(
   () => companion.value.championId,
   () => {
     message.value = "";
     void loadHero();
+    void loadCards();
   },
 );
 onMounted(() => {
   stop = startCompanion(
-    (account) => {
+    (account, previous) => {
       if (account) void loadHero();
+      if (previous.phase !== state.value.phase) {
+        error.value = "";
+        void loadCards();
+      }
     },
     { rating: false },
   );
   void loadHero();
+  poll = setInterval(() => {
+    if (state.value.phase === "ChampSelect" && !companion.value.championId)
+      void loadCards();
+  }, 1500);
 });
 onUnmounted(() => {
   epoch++;
+  cardEpoch++;
+  clearInterval(poll);
   stop();
 });
 </script>
@@ -132,7 +226,7 @@ onUnmounted(() => {
 <template>
   <div class="companion-shell info">
     <header class="companion-titlebar">
-      <div class="companion-brand"><Swords :size="15" />英雄信息</div>
+      <div class="companion-brand"><Swords :size="15" />英雄推荐</div>
       <div class="window-actions">
         <button aria-label="打开工作台" title="打开主窗口" @click="act('main')">
           <ArrowUpRight :size="15" />
@@ -146,10 +240,37 @@ onUnmounted(() => {
         </button>
       </div>
     </header>
-    <div v-if="!hero" class="companion-empty">
+    <main v-if="!hero && cardIds.length" class="info-body card-compare">
+      <h3>本次英雄卡片 · 海克斯推荐对比</h3>
+      <button
+        v-for="id in cardIds"
+        :key="id"
+        class="card-compare-row"
+        :aria-label="'查看卡片英雄 ' + (heroes.get(id)?.name || id)"
+        @click="view(id)"
+      >
+        <div class="card-compare-head">
+          <ChampionIcon :champion="heroes.get(id)" :size="38" />
+          <strong>{{ heroes.get(id)?.name || id }}</strong>
+          <span>{{ percent(stats.get(id)?.winRate) }}</span>
+        </div>
+        <ol v-if="cardTop(id).length">
+          <li v-for="item in cardTop(id)" :key="item.row.augment.id">
+            <b :class="['grade', item.grade]">{{ item.grade }}</b
+            >{{ item.row.augment.name
+            }}<small>{{ percent(item.row.winRate) }}</small>
+          </li>
+        </ol>
+        <p v-else class="compact-empty">正在读取或暂无可定级的强化</p>
+      </button>
+      <p class="info-note">
+        在 Mini 窗点击头像选用；评级为该英雄强化内的相对排名，不是获胜概率。
+      </p>
+    </main>
+    <div v-else-if="!hero" class="companion-empty">
       <Swords :size="26" />
       <strong>等待选择英雄</strong>
-      <small>在 Mini 窗点击头像查看方案</small>
+      <small>拿到英雄后显示海克斯推荐、出装与符文</small>
     </div>
     <template v-else>
       <section class="companion-hero-heading">
@@ -170,31 +291,16 @@ onUnmounted(() => {
       >
         正在查看其他英雄 · 回到当前英雄
       </button>
-      <nav class="info-tabs" role="tablist" aria-label="英雄信息">
+      <nav class="info-tabs" role="tablist" aria-label="英雄推荐">
         <button
+          v-for="item in tabs"
+          :key="item.id"
           role="tab"
-          :aria-selected="tab === 'build'"
-          :class="{ active: tab === 'build' }"
-          @click="tab = 'build'"
+          :aria-selected="tab === item.id"
+          :class="{ active: tab === item.id }"
+          @click="tab = item.id"
         >
-          出装
-        </button>
-        <button
-          role="tab"
-          :aria-selected="tab === 'runes'"
-          :class="{ active: tab === 'runes' }"
-          @click="tab = 'runes'"
-        >
-          符文
-        </button>
-        <button
-          v-if="state.mode === 'hex'"
-          role="tab"
-          :aria-selected="tab === 'augments'"
-          :class="{ active: tab === 'augments' }"
-          @click="tab = 'augments'"
-        >
-          强化
+          {{ item.name }}
         </button>
       </nav>
       <main class="info-body">
@@ -203,6 +309,30 @@ onUnmounted(() => {
             >正在读取国服统计</small
           >
         </div>
+        <template v-else-if="tab === 'augments'">
+          <div
+            v-for="row in topAugments"
+            :key="row.augment.id"
+            class="compact-augment"
+          >
+            <b :class="['grade', gradeOf(row)]">{{ gradeOf(row) }}</b
+            ><strong
+              ><i :class="['augment-dot', row.augment.rarity]"></i
+              >{{ row.augment.name }}</strong
+            ><span>{{ percent(row.winRate) }}</span
+            ><small
+              >{{ row.games ?? "—" }} 场{{
+                row.lowSample ? " · 低样本" : ""
+              }}</small
+            >
+          </div>
+          <p v-if="!topAugments.length" class="compact-empty">
+            当前分组暂无强化统计
+          </p>
+          <p v-else class="info-note">
+            评级为本英雄强化内按平滑胜率的相对排名，低样本不定级；不是获胜概率。
+          </p>
+        </template>
         <template v-else-if="tab === 'build'">
           <section v-for="group in itemRows" :key="group.name" class="info-row">
             <h3>{{ group.name }}</h3>
@@ -237,7 +367,7 @@ onUnmounted(() => {
             <p v-else class="compact-empty">当前来源未提供</p>
           </section>
         </template>
-        <template v-else-if="tab === 'runes'">
+        <template v-else>
           <div
             v-for="(rune, index) in recommendation?.runes.slice(0, 2) ?? []"
             :key="index"
@@ -272,25 +402,6 @@ onUnmounted(() => {
           </div>
           <p v-if="!recommendation?.runes.length" class="compact-empty">
             当前来源暂无完整符文方案
-          </p>
-        </template>
-        <template v-else>
-          <div
-            v-for="row in ranking?.augments.slice(0, 8) ?? []"
-            :key="row.augment.id"
-            class="compact-augment"
-          >
-            <span :class="['augment-dot', row.augment.rarity]"></span
-            ><strong>{{ row.augment.name }}</strong
-            ><b>{{ percent(row.winRate) }}</b
-            ><small
-              >{{ row.games ?? "—" }} 场{{
-                row.lowSample ? " · 低样本" : ""
-              }}</small
-            >
-          </div>
-          <p v-if="!ranking?.augments.length" class="compact-empty">
-            当前分组暂无强化统计
           </p>
         </template>
       </main>

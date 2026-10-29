@@ -464,37 +464,48 @@ export class Client extends EventEmitter {
           (member: any) => member.cellId === session.localPlayerCellId,
         )?.championId,
       ) || 0;
+    const bench =
+      session.benchEnabled === true
+        ? (session.benchChampions ?? [])
+            .map((item: any) => Number(item.championId))
+            .filter((id: number) => valid(id) && id !== current)
+        : [];
     if (this.isSubsetPhase(session)) {
+      // 卡片与备选席合并展示；客户端规则：卡片阶段只能拿本人卡片，队友留下的需等选人结束。
       const cards = subset
         .filter(valid)
         .filter((id) => !pickable.length || pickable.includes(id));
+      const waiting = bench.filter((id: number) => !cards.includes(id));
       if (!current) {
         const action = this.subsetPickAction(session);
         return action && cards.length
           ? {
               championIds: cards,
               kind: "subset",
-              reason: "点击头像直接选用英雄卡片",
+              cards,
+              waiting,
+              reason: "点击卡片英雄直接选用",
             }
-          : { championIds: [], kind: "none", reason: "等待英雄卡片出现" };
+          : {
+              championIds: [],
+              kind: "none",
+              waiting,
+              reason: "等待英雄卡片出现",
+            };
       }
       return session.benchEnabled === true
         ? {
             championIds: cards.filter((id) => id !== current),
             kind: "bench",
-            reason: "本阶段只能换用本次卡片中的英雄",
+            cards,
+            waiting,
+            reason: "卡片英雄可立即换用，队友留下的需等选人结束",
           }
         : { championIds: [], kind: "none", reason: "已选用英雄卡片" };
     }
     if (this.state.mode === "aram" || this.state.mode === "hex") {
-      const ids =
-        session.benchEnabled === true
-          ? (session.benchChampions ?? []).map((item: any) =>
-              Number(item.championId),
-            )
-          : [];
       return {
-        championIds: ids.filter((id: number) => valid(id) && id !== current),
+        championIds: bench,
         kind: session.benchEnabled === true ? "bench" : "none",
         reason:
           session.benchEnabled === true

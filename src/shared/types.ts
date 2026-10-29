@@ -149,6 +149,10 @@ export interface ChampionChoices {
   /** subset：海克斯/大乱斗的英雄卡片；bench：备选席；pick：峡谷本人预选。 */
   kind: "subset" | "bench" | "pick" | "none";
   reason: string;
+  /** 本人的英雄卡片（显示角标），可能同时在 championIds 中。 */
+  cards?: number[];
+  /** 已在备选席但客户端暂不允许换用的英雄（如队友留下的，需等选人结束）。 */
+  waiting?: number[];
 }
 export interface CompanionState {
   championId: number | null;
@@ -226,6 +230,10 @@ export interface Settings {
   monitor: number;
   overlay: boolean;
   companionWindows?: boolean;
+  /** 用户调整过的客户端小窗尺寸（DIP）。 */
+  companionSize?: Partial<
+    Record<"picker" | "info", { width: number; height: number }>
+  >;
   closeAction?: CloseAction;
   managedRunePage: { id: number; puuid: string } | null;
 }

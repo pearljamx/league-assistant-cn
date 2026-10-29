@@ -110,6 +110,22 @@ export function validateSettings(
     );
   if (["all", "casual", "mid", "high"].includes(patch.band ?? ""))
     next.band = patch.band!;
+  if (patch.companionSize && typeof patch.companionSize === "object") {
+    const size = { ...(base.companionSize ?? {}) };
+    for (const role of ["picker", "info"] as const) {
+      const value = (patch.companionSize as Record<string, any>)[role];
+      if (
+        Number.isInteger(value?.width) &&
+        Number.isInteger(value?.height) &&
+        value.width >= 280 &&
+        value.width <= 1200 &&
+        value.height >= 300 &&
+        value.height <= 1400
+      )
+        size[role] = { width: value.width, height: value.height };
+    }
+    next.companionSize = size;
+  }
   if (["ask", "tray", "quit"].includes(patch.closeAction ?? ""))
     next.closeAction = patch.closeAction!;
   if (["rift", "aram", "hex"].includes(patch.mode ?? ""))

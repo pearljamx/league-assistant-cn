@@ -188,3 +188,23 @@ describe("持久化与符文页面归属", () => {
     },
   );
 });
+it("小窗尺寸只接受合理范围内的整数，并保留另一个窗的尺寸", () => {
+  const base = validateSettings(
+    { companionSize: { picker: { width: 360, height: 480 } } },
+    defaults,
+  );
+  expect(base.companionSize).toEqual({ picker: { width: 360, height: 480 } });
+  const next = validateSettings(
+    {
+      companionSize: {
+        info: { width: 400, height: 700 },
+        picker: { width: 10, height: 99999 },
+      } as any,
+    },
+    base,
+  );
+  expect(next.companionSize).toEqual({
+    picker: { width: 360, height: 480 },
+    info: { width: 400, height: 700 },
+  });
+});

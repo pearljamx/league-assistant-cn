@@ -95,3 +95,7 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 2026-10-29 实战反馈：海克斯新选人是“二选一英雄卡片”，Mini 窗原先读不到，并报“数据格式无法解析”。根因①：LCU 写接口（bench swap、PATCH action、ready-check accept）成功时返回 204 空体，jsonRequest 强行 JSON.parse 报错，现空体返回 undefined。根因②：卡片属于 subset pick（session.allowSubsetChampionPicks + timer.phase=BAN_PICK），列表来自 /lol-lobby-team-builder/champ-select/v1/subset-champion-list（参考 Akari，其注释称规则抄自客户端）。无英雄时点卡片 PATCH 本人未完成 pick action {completed:true}；已选后同阶段只可 bench swap 本次卡片中的英雄。
 - 用户改为“点头像就直接换”：Mini 窗左键即写入（卡片选用/备选席交换/峡谷预选不锁定），右键只查看；不可用头像 aria-disabled 且 choose 内再核对。选人阶段每秒刷新可选项，阶段变化清除旧错误。
 - 真实卡片阶段尚未用新代码实测（当时客户端在大厅）。scripts/inspect-champ-select.ts（npm run inspect:champ-select）只读打印脱敏会话结构。用户的 npm run dev 实例运行时桌面冒烟会因单实例锁直接退出，不得为测试关闭用户实例；主进程改动需用户重启 dev 才生效。
+- 2026-10-29 用户反馈：卡片不要单独一步，要和备选席（含队友留下的）合并，点头像直接拿；小窗可拖边缘调大小；进入选人要有显示海克斯推荐的额外弹窗。实现：ChampionChoices 增加 cards/waiting；卡片阶段 waiting=备选席中不在本人卡片内的英雄（客户端规则：BAN_PICK 只能拿本人卡片，FINALIZATION 才能换队友留下的），Mini 列表 cards→可换→waiting，当前英雄不列出。
+- 小窗 resizable + min/max；“resized”后把尺寸写入 settings.companionSize（validateSettings 限 280–1200×300–1400，渲染层 settings-save 的 strict schema 不接受该字段）。贴靠改为两窗同侧：并排放不下时上下叠放（Mini 上、推荐窗下），整体上移以完整显示；按窗当前尺寸计算。2048×1232 工作区、居中客户端时两窗叠放在右侧 x=1672。
+- 英雄推荐窗（原英雄信息窗）：海克斯模式默认“海克斯”标签，前 10 个强化 + shared/augment-grade.ts 评级（非低样本按平滑胜率排名，位次 ≤10% S、≤30% A、≤60% B、≤85% C，其余 D，可定级少于 3 个时不定级）；无英雄时对比卡片英雄胜率与前 3 个可定级强化。
+- 本轮真实客户端未复测：用户的 npm run dev（electron pid 30476）在运行，桌面冒烟会被单实例锁拦下。

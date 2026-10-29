@@ -99,20 +99,30 @@ it("客户端右侧有空间时两个小窗贴在其右侧", () => {
   expect(result.picker.y).toBe(150);
   expect(result.info.x).toBe(result.picker.x + result.picker.width + 8);
 });
-it("右侧不够时贴在左侧，单侧只够一个窗时分放两侧，都不够时退回右上角", () => {
+it("右侧不够时贴在左侧，只够一个窗宽时上下叠放在同侧，都不够时退回右上角", () => {
   const left = alignToClient(
     { x: 1200, y: 100, width: 1280, height: 720 },
     area,
   );
   expect(left.info.x + left.info.width).toBe(1192);
-  // 2048 宽工作区居中的 1280 客户端：两侧各约 376，Mini 右、信息窗左。
-  const split = alignToClient(
+  // 2048×1232 工作区居中的 1280×720 客户端：右侧 376，只够一个窗宽，叠放在右侧。
+  const work = { x: 0, y: 0, width: 2048, height: 1232 };
+  const stacked = alignToClient(
     { x: 384, y: 256, width: 1280, height: 720 },
-    { x: 0, y: 0, width: 2048, height: 1232 },
+    work,
   );
-  expect(split.picker.x).toBe(1672);
-  expect(split.info.x + split.info.width).toBe(376);
-  expect(split.picker.y).toBe(256);
+  expect(stacked.picker.x).toBe(1672);
+  expect(stacked.info.x).toBe(1672);
+  expect(stacked.info.y).toBe(stacked.picker.y + stacked.picker.height + 8);
+  expect(stacked.info.y + stacked.info.height).toBeLessThanOrEqual(1232);
+  const resized = alignToClient(
+    { x: 384, y: 256, width: 1280, height: 720 },
+    work,
+    { picker: { width: 300, height: 380 }, info: { width: 360, height: 700 } },
+  );
+  expect(resized.picker.width).toBe(300);
+  expect(resized.info.height).toBe(700);
+  expect(resized.info.y).toBe(resized.picker.y + 388);
   const full = { x: 0, y: 0, width: 1920, height: 1040 };
   expect(
     alignToClient({ x: 0, y: 0, width: 1920, height: 1080 }, full),

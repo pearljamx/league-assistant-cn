@@ -194,7 +194,7 @@ const api = {
         pickRate: 0.1,
         smoothedWinRate: 0.5 + augment.id / 400,
         delta: augment.id / 400,
-        lowSample: true,
+        lowSample: augment.id === 4,
       })),
     }),
   getRecognition: () => ok(recognition),

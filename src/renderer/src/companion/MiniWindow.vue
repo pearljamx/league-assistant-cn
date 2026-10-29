@@ -90,8 +90,21 @@ const status = computed(() => {
 });
 const current = computed(() => heroes.value.get(state.value.championId || 0));
 const available = computed(() => new Set(choices.value.championIds));
-/** 备选席全部显示；普通选人按统计胜率排序后只列出前 15 个，可搜索。 */
+const cards = computed(() => new Set(choices.value.cards ?? []));
+const waiting = computed(() => new Set(choices.value.waiting ?? []));
+/**
+ * 大乱斗：本人卡片在前，其余备选席（含队友留下的）在后，统一按备选席展示。
+ * 峡谷：按统计胜率排序后列出前 15 个，可搜索。
+ */
 const shown = computed(() => {
+  if (choices.value.kind !== "pick")
+    return [
+      ...new Set([
+        ...(choices.value.cards ?? []),
+        ...choices.value.championIds,
+        ...(choices.value.waiting ?? []),
+      ]),
+    ].filter((id) => id !== state.value.championId);
   const text = search.value.trim().toLowerCase();
   const ids = choices.value.championIds.filter((id) => {
     if (!text) return true;
@@ -100,11 +113,13 @@ const shown = computed(() => {
       .toLowerCase()
       .includes(text);
   });
-  const sorted = [...ids].sort(
-    (a, b) =>
-      (stats.value.get(b)?.winRate ?? -1) - (stats.value.get(a)?.winRate ?? -1),
-  );
-  return choices.value.kind === "pick" ? sorted.slice(0, 15) : sorted;
+  return [...ids]
+    .sort(
+      (a, b) =>
+        (stats.value.get(b)?.winRate ?? -1) -
+        (stats.value.get(a)?.winRate ?? -1),
+    )
+    .slice(0, 15);
 });
 const pending = ref<number | null>(null);
 const canChoose = (id: number) =>
@@ -112,15 +127,16 @@ const canChoose = (id: number) =>
   available.value.has(id) &&
   state.value.championId !== id &&
   !choosing.value;
-const heading = computed(
-  () =>
-    ({
-      subset: "选择英雄卡片",
-      bench: "备选席",
-      pick: "可选英雄",
-      none: "换用英雄",
-    })[choices.value.kind],
+const heading = computed(() =>
+  choices.value.kind === "pick" ? "可选英雄" : "备选席",
 );
+const tip = (id: number) =>
+  (heroes.value.get(id)?.name || "") +
+  (canChoose(id)
+    ? " · 点击换用"
+    : waiting.value.has(id)
+      ? " · 选人结束后可换"
+      : " · 暂不可换");
 async function refreshChoices() {
   const version = ++selectionEpoch;
   if (state.value.phase !== "ChampSelect") {
@@ -245,12 +261,10 @@ onUnmounted(() => {
         </div>
         <div class="mini-choices-head">
           <span>{{ heading }}</span>
-          <small v-if="choices.kind !== 'none'">{{
-            choices.kind === "subset"
-              ? "点击头像直接选用 · 右键只查看"
-              : choices.kind === "pick"
-                ? "点击头像直接预选 · 不锁定"
-                : "点击头像直接换用 · 右键只查看"
+          <small v-if="shown.length">{{
+            choices.kind === "pick"
+              ? "点击头像直接预选 · 不锁定"
+              : "点击头像直接换用 · 右键只查看"
           }}</small>
         </div>
         <div v-if="choices.kind === 'pick'" class="mini-search">
@@ -260,10 +274,7 @@ onUnmounted(() => {
             placeholder="搜索英雄"
           />
         </div>
-        <div
-          v-if="shown.length"
-          :class="['mini-choice-grid', { cards: choices.kind === 'subset' }]"
-        >
+        <div v-if="shown.length" class="mini-choice-grid">
           <button
             v-for="id in shown"
             :key="id"
@@ -273,28 +284,26 @@ onUnmounted(() => {
                 active:
                   companion.championId === id && !companion.followingClient,
                 busy: pending === id,
+                card: cards.has(id),
+                waiting: !canChoose(id) && waiting.has(id),
               },
             ]"
             :disabled="choosing"
             :aria-disabled="!canChoose(id)"
-            :aria-label="
-              (choices.kind === 'subset' ? '选用' : '换用') +
-              (heroes.get(id)?.name || id)
-            "
-            :title="
-              (heroes.get(id)?.name || '') +
-              (choices.kind === 'subset' ? ' · 点击选用' : ' · 点击换用')
-            "
+            :aria-label="'换用' + (heroes.get(id)?.name || id)"
+            :title="tip(id)"
             @click="choose(id)"
             @contextmenu.prevent="view(id)"
           >
-            <ChampionIcon
-              :champion="heroes.get(id)"
-              :size="choices.kind === 'subset' ? 58 : 40"
-            /><b v-if="choices.kind === 'subset'">{{
-              heroes.get(id)?.name || id
-            }}</b
-            ><small>{{ percent(stats.get(id)?.winRate) }}</small>
+            <ChampionIcon :champion="heroes.get(id)" :size="42" /><i
+              v-if="cards.has(id)"
+              class="card-badge"
+              >卡片</i
+            ><small>{{
+              !canChoose(id) && waiting.has(id)
+                ? "稍后可换"
+                : percent(stats.get(id)?.winRate)
+            }}</small>
             <RefreshCw v-if="pending === id" :size="14" class="spinning" />
           </button>
         </div>

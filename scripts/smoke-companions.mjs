@@ -59,6 +59,8 @@ try {
       championIds: [202, 22],
       kind: "subset",
       reason: "隔离测试英雄卡片",
+      cards: [202, 22],
+      waiting: [99],
     });
     await window.rendererFixture.selection({
       members: [
@@ -84,18 +86,29 @@ try {
   await expect(picker.locator(".mini-current strong")).toHaveText(
     "尚未选择英雄",
   );
+  await expect(picker.locator(".mini-choices-head span")).toHaveText("备选席");
+  await expect(picker.locator(".quick-hero")).toHaveCount(3);
+  await expect(picker.locator(".quick-hero.card")).toHaveCount(2);
   await expect(
-    picker.locator(".mini-choice-grid.cards .quick-hero"),
-  ).toHaveCount(2);
-  await expect(picker.locator(".mini-choices-head")).toContainText(
-    "选择英雄卡片",
+    picker.getByRole("button", { name: "换用测试英雄三", exact: true }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await expect(picker.locator(".quick-hero.waiting")).toContainText("稍后可换");
+  report.checks.push(
+    "英雄卡片出现即与备选席合并显示，队友留下的英雄列出但标明稍后可换",
   );
-  report.checks.push("英雄卡片出现时 Mini 窗立即列出可选卡片");
+  await expect(info.locator(".card-compare-row")).toHaveCount(2);
+  await expect(info.locator(".card-compare-row").first()).toContainText(
+    "测试强化丙",
+  );
+  report.checks.push("英雄推荐窗在拿到英雄前对比卡片英雄的海克斯推荐");
   await picker.screenshot({
     path: "artifacts/screenshots/companion-cards-fixture.png",
   });
+  await info.screenshot({
+    path: "artifacts/screenshots/companion-cards-info-fixture.png",
+  });
   await picker
-    .getByRole("button", { name: "选用测试英雄二", exact: true })
+    .getByRole("button", { name: "换用测试英雄二", exact: true })
     .click({ button: "right" });
   await expect(info.locator(".companion-hero-heading h1")).toHaveText(
     "测试英雄二",
@@ -103,9 +116,9 @@ try {
   await expect
     .poll(() => picker.evaluate(() => window.rendererFixture.chooseCalls()))
     .toEqual([]);
-  report.checks.push("右键头像只同步英雄信息窗，不写入客户端");
+  report.checks.push("右键头像只同步英雄推荐窗，不写入客户端");
   await picker
-    .getByRole("button", { name: "选用测试英雄一", exact: true })
+    .getByRole("button", { name: "换用测试英雄一", exact: true })
     .click();
   await expect
     .poll(() => picker.evaluate(() => window.rendererFixture.chooseCalls()))
@@ -113,8 +126,24 @@ try {
   await expect(picker.locator(".mini-current strong")).toHaveText("测试英雄一");
   await expect(
     picker.getByRole("button", { name: "换用测试英雄二", exact: true }),
-  ).toBeVisible();
-  report.checks.push("点击卡片头像一次即选用，随后显示可换用的其余卡片");
+  ).not.toHaveAttribute("aria-disabled", "true");
+  await expect(info.locator(".companion-hero-heading h1")).toHaveText(
+    "测试英雄一",
+  );
+  await expect(
+    info.getByRole("tab", { name: "海克斯", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(info.locator(".compact-augment")).toHaveCount(4);
+  await expect(info.locator(".compact-augment .grade.S")).toHaveCount(1);
+  await expect(
+    info
+      .locator(".compact-augment")
+      .filter({ hasText: "低样本" })
+      .locator(".grade"),
+  ).toHaveText("—");
+  report.checks.push(
+    "点卡片头像一次即拿到英雄，英雄推荐窗默认显示带评级的海克斯推荐",
+  );
   await picker
     .getByRole("button", { name: "换用测试英雄二", exact: true })
     .click();
@@ -130,11 +159,11 @@ try {
     }),
   );
   await expect(
+    picker.getByRole("button", { name: "换用测试英雄一", exact: true }),
+  ).toBeVisible();
+  await expect(
     picker.getByRole("button", { name: "换用测试英雄二", exact: true }),
-  ).toHaveAttribute("aria-disabled", "true");
-  await picker
-    .getByRole("button", { name: "换用测试英雄二", exact: true })
-    .click({ force: true });
+  ).toHaveCount(0);
   await picker.waitForTimeout(300);
   expect(
     await picker.evaluate(() => window.rendererFixture.chooseCalls()),

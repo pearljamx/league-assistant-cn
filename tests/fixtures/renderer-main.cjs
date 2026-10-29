@@ -112,6 +112,7 @@ app.whenReady().then(async () => {
     choices =
       choices.kind === "subset"
         ? {
+            ...choices,
             championIds: choices.championIds.filter((item) => item !== id),
             kind: "bench",
             reason: "测试：选卡后可换用其余卡片",

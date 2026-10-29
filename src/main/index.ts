@@ -26,6 +26,9 @@ import {
   CompanionController,
   alignToClient,
   companionBounds,
+  companionLimits,
+  companionSizes,
+  type CompanionSizes,
   type CompanionRole,
 } from "./companions";
 import { clientWindowRect } from "./client-window";
@@ -444,12 +447,22 @@ else {
       overlay.setIgnoreMouseEvents(true, { forward: true });
       overlay.setAlwaysOnTop(true, "screen-saver");
       const area = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
-      const bounds = companionBounds(area);
+      const saved = storage.getSettings().companionSize ?? {};
+      const bounds = companionBounds(area, {
+        picker: saved.picker ?? companionSizes.picker,
+        info: saved.info ?? companionSizes.info,
+      });
       for (const role of ["picker", "info"] as const) {
         const window = new BrowserWindow({
           ...bounds[role],
           frame: false,
-          resizable: false,
+          // 无边框窗口仍可从边缘拖动调整大小；尺寸会记住到下次启动。
+          resizable: true,
+          ...companionLimits[role],
+          maxWidth: companionLimits.maxWidth,
+          maxHeight: companionLimits.maxHeight,
+          maximizable: false,
+          fullscreenable: false,
           movable: true,
           show: false,
           skipTaskbar: true,
@@ -457,14 +470,24 @@ else {
           backgroundColor: "#10181b",
           title:
             role === "picker"
-              ? "英雄快选 · 英雄联盟助手"
-              : "英雄情报 · 英雄联盟助手",
+              ? "Mini · 英雄联盟助手"
+              : "英雄推荐 · 英雄联盟助手",
           webPreferences,
         });
         if (role === "picker") pickerWindow = window;
         else infoWindow = window;
         // 用户拖动过的小窗保持其位置，不再自动贴靠客户端。
         window.on("will-move", () => userMoved.add(role));
+        window.on("resized", () => {
+          if (window.isDestroyed()) return;
+          const { width, height } = window.getBounds();
+          const current = storage.getSettings().companionSize ?? {};
+          void storage
+            .updateSettings({
+              companionSize: { ...current, [role]: { width, height } },
+            })
+            .catch(() => {});
+        });
         window.on("ready-to-show", () => {
           readyCompanions.add(role);
           updateCompanionWindows();
@@ -542,13 +565,29 @@ else {
       /** 贴在客户端窗口旁边；找不到客户端窗口时放在主窗口所在屏幕右上角。 */
       async function placeCompanions(roles: CompanionRole[]) {
         const rect = await clientWindowRect();
+        // 按两个窗当前（可能被用户调整过的）尺寸排布。
+        const sizeOf = (role: CompanionRole) => {
+          const window = companionWindow(role);
+          if (!window || window.isDestroyed()) return companionSizes[role];
+          const { width, height } = window.getBounds();
+          return { width, height };
+        };
+        const sizes: CompanionSizes = {
+          picker: sizeOf("picker"),
+          info: sizeOf("info"),
+        };
         let next;
         if (rect) {
           const dip = screen.screenToDipRect(null, rect);
-          next = alignToClient(dip, screen.getDisplayMatching(dip).workArea);
+          next = alignToClient(
+            dip,
+            screen.getDisplayMatching(dip).workArea,
+            sizes,
+          );
         } else if (mainWindow && !mainWindow.isDestroyed())
           next = companionBounds(
             screen.getDisplayMatching(mainWindow.getBounds()).workArea,
+            sizes,
           );
         else return;
         for (const role of roles) {

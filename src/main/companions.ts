@@ -8,12 +8,20 @@ export interface WindowBounds {
   width: number;
   height: number;
 }
-export const companionSizes: Record<
+export type CompanionSizes = Record<
   CompanionRole,
   { width: number; height: number }
-> = {
+>;
+export const companionSizes: CompanionSizes = {
   picker: { width: 340, height: 420 },
   info: { width: 360, height: 600 },
+};
+/** 用户拖动边缘调整大小时的下限与上限（DIP）。 */
+export const companionLimits = {
+  picker: { minWidth: 300, minHeight: 340 },
+  info: { minWidth: 320, minHeight: 420 },
+  maxWidth: 1200,
+  maxHeight: 1400,
 };
 const hiddenPhases = [
   "GameStart",
@@ -25,6 +33,7 @@ const hiddenPhases = [
 /** All coordinates here are Electron device-independent pixels, including negative monitors. */
 export function companionBounds(
   area: WindowBounds,
+  sizes: CompanionSizes = companionSizes,
 ): Record<CompanionRole, WindowBounds> {
   const margin = Math.min(
     16,
@@ -32,8 +41,8 @@ export function companionBounds(
     Math.floor(area.height / 8),
   );
   const size = (role: CompanionRole) => ({
-    width: Math.min(companionSizes[role].width, area.width - margin * 2),
-    height: Math.min(companionSizes[role].height, area.height - margin * 2),
+    width: Math.min(sizes[role].width, area.width - margin * 2),
+    height: Math.min(sizes[role].height, area.height - margin * 2),
   });
   const info = size("info"),
     picker = size("picker");
@@ -49,16 +58,17 @@ export function companionBounds(
 }
 
 /**
- * 参考 Akari 的贴靠方式：小窗放在客户端窗口外侧，优先右侧；
- * 一侧放不下两个窗时，Mini 窗放右侧、英雄信息窗放左侧；
+ * 参考 Akari 的贴靠方式：两个小窗始终放在客户端同一侧（优先右侧）。
+ * 并排放得下就并排；只够一个窗宽时上下叠放（Mini 在上、英雄推荐在下）；
  * 都放不下时退回工作区右上角。结果始终限制在工作区内。
  */
 export function alignToClient(
   client: WindowBounds,
   area: WindowBounds,
+  sizes: CompanionSizes = companionSizes,
 ): Record<CompanionRole, WindowBounds> {
   const gap = 8;
-  const fallback = companionBounds(area);
+  const fallback = companionBounds(area, sizes);
   const picker = fallback.picker,
     info = fallback.info;
   const clamp = (bounds: WindowBounds): WindowBounds => ({
@@ -73,24 +83,41 @@ export function alignToClient(
   const rightSpace = area.x + area.width - rightStart;
   const leftSpace = client.x - gap - area.x;
   const y = client.y;
-  const total = picker.width + gap + info.width;
-  if (rightSpace >= total)
+  const row = picker.width + gap + info.width;
+  const column = Math.max(picker.width, info.width);
+  const stackedHeight = picker.height + gap + info.height;
+  const stack = (x: number, alignRight: boolean) => {
+    // 叠放时整体上移以完整显示两个窗。
+    const top = Math.max(
+      area.y,
+      Math.min(y, area.y + area.height - stackedHeight),
+    );
+    const left = (width: number) => (alignRight ? x + column - width : x);
+    return {
+      picker: clamp({ ...picker, x: left(picker.width), y: top }),
+      info: clamp({
+        ...info,
+        x: left(info.width),
+        y: top + picker.height + gap,
+      }),
+    };
+  };
+  if (rightSpace >= row)
     return {
       picker: clamp({ ...picker, x: rightStart, y }),
       info: clamp({ ...info, x: rightStart + picker.width + gap, y }),
     };
-  if (leftSpace >= total) {
-    const x = client.x - gap - total;
+  if (leftSpace >= row) {
+    const x = client.x - gap - row;
     return {
       picker: clamp({ ...picker, x, y }),
       info: clamp({ ...info, x: x + picker.width + gap, y }),
     };
   }
-  if (rightSpace >= picker.width && leftSpace >= info.width)
-    return {
-      picker: clamp({ ...picker, x: rightStart, y }),
-      info: clamp({ ...info, x: client.x - gap - info.width, y }),
-    };
+  if (stackedHeight <= area.height) {
+    if (rightSpace >= column) return stack(rightStart, false);
+    if (leftSpace >= column) return stack(client.x - gap - column, true);
+  }
   return fallback;
 }
 
