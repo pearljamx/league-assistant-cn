@@ -35,6 +35,7 @@ import {
 } from "./companions";
 import { clientWindowRect, resizeClientWindow } from "./client-window";
 import { Toolkit } from "./toolkit";
+import { recommendationFromAramgg } from "./providers/aramgg-recommend";
 import { setPublicFetcher } from "./http";
 import { createTray } from "./tray";
 import { PlayerStore, playerTags } from "./players";
@@ -370,9 +371,19 @@ else {
           ? aramhex.overview(parsed.band)
           : tencent.overview(parsed);
       });
-      handle("recommendation", (championId, value) =>
-        tencent.recommendation(hero.parse(championId), query.parse(value)),
-      );
+      handle("recommendation", async (championId, value) => {
+        const id = hero.parse(championId),
+          stats = query.parse(value);
+        // 极地大乱斗：腾讯 101 没有出装统计，默认用 aramgg（队列 450 全球统计，公共数据包免 Key）。
+        if (stats.mode === "aram") {
+          const fromAramgg = await aramgg
+            .champion(id)
+            .then(recommendationFromAramgg)
+            .catch(() => null);
+          if (fromAramgg) return fromAramgg;
+        }
+        return tencent.recommendation(id, stats);
+      });
       handle("augments", (championId, value) =>
         aramhex.augments(
           championId === null ? null : hero.parse(championId),

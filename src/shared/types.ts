@@ -57,7 +57,7 @@ export interface ConnectionState {
   updatedAt: string;
 }
 export interface SourceInfo {
-  id: "tencent" | "aramhex";
+  id: "tencent" | "aramhex" | "aramgg";
   name: string;
   url: string;
   mode: Mode;
@@ -106,6 +106,8 @@ export interface Recommendation {
   later: ItemOption[];
   runes: RuneOption[];
   skills: SkillOption[];
+  /** 召唤师技能组合（目前只有 aramgg 极地大乱斗提供）。 */
+  spells?: (ItemOption & { names: string[] })[];
   unavailable: string[];
 }
 export interface Augment {

@@ -448,7 +448,10 @@ onUnmounted(() => {
             v-if="state.mode === 'hex' && useAramgg && aramggBuild"
             class="info-row"
           >
-            <h3>aramgg 流派 · {{ aramggBuild.tags || "推荐" }}</h3>
+            <h3>
+              aramgg 流派 · {{ aramggBuild.tags || "推荐" }}
+              <small>极地大乱斗全球统计，仅供参考</small>
+            </h3>
             <div v-if="aramggBuild.core[0]" class="info-items">
               <img
                 v-for="id in aramggBuild.core[0].ids"
@@ -496,6 +499,17 @@ onUnmounted(() => {
               >
             </div>
             <p v-else class="compact-empty">当前来源未提供</p>
+          </section>
+          <section v-if="recommendation?.spells?.length" class="info-row">
+            <h3>召唤师技能</h3>
+            <p
+              v-for="(row, index) in recommendation.spells.slice(0, 2)"
+              :key="index"
+              class="compact-label"
+            >
+              {{ row.names.join(" + ") }}
+              <span>{{ percent(row.winRate) }}</span>
+            </p>
           </section>
         </template>
         <template v-else>
