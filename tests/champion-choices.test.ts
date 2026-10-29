@@ -159,3 +159,73 @@ it("服务端阶段已变化但本地事件未到达时，写前检查拒绝", a
   expect(writes(request)).toEqual([]);
   client.stop();
 });
+const cardSession = (championId = 0) => ({
+  ...session(),
+  benchChampions: [],
+  allowSubsetChampionPicks: true,
+  timer: { phase: "BAN_PICK" },
+  myTeam: [
+    { cellId: 0, puuid: "self", summonerId: 1, championId },
+    { cellId: 1, puuid: "peer", championId: 99 },
+  ],
+});
+function cardSetup(current = 0, cards = [143, 76]) {
+  const { client, request } = setup("hex");
+  request.mockImplementation(async (path: string, method = "GET") => {
+    if (method !== "GET") return undefined;
+    if (path.endsWith("gameflow-phase")) return "ChampSelect";
+    if (path.endsWith("subset-champion-list")) return cards;
+    if (path.endsWith("pickable-champion-ids")) return [...cards, 22];
+    return cardSession(current);
+  });
+  return { client, request };
+}
+it("英雄卡片出现时即可在小窗选用，点击即完成该卡片选择", async () => {
+  const { client, request } = cardSetup();
+  expect(await client.getChampionChoices()).toMatchObject({
+    kind: "subset",
+    championIds: [143, 76],
+  });
+  await expect(client.chooseChampion(22)).rejects.toMatchObject({
+    code: "CHAMPION_UNAVAILABLE",
+  });
+  expect(writes(request)).toEqual([]);
+  await client.chooseChampion(76);
+  expect(writes(request)).toEqual([
+    [
+      "/lol-champ-select/v1/session/actions/7",
+      "PATCH",
+      { championId: 76, completed: true },
+    ],
+  ]);
+  client.stop();
+});
+it("选完卡片后同阶段只能换用本次卡片中的其他英雄", async () => {
+  const { client, request } = cardSetup(76);
+  expect(await client.getChampionChoices()).toMatchObject({
+    kind: "bench",
+    championIds: [143],
+  });
+  await client.chooseChampion(143);
+  expect(writes(request)).toEqual([
+    ["/lol-champ-select/v1/session/bench/swap/143", "POST"],
+  ]);
+  client.stop();
+});
+it("写前第二次读取发现卡片变化，拒绝旧卡片", async () => {
+  const { client, request } = cardSetup();
+  let reads = 0;
+  request.mockImplementation(async (path: string, method = "GET") => {
+    if (method !== "GET") return undefined;
+    if (path.endsWith("gameflow-phase")) return "ChampSelect";
+    if (path.endsWith("subset-champion-list"))
+      return ++reads > 1 ? [143, 81] : [143, 76];
+    if (path.endsWith("pickable-champion-ids")) return [143, 76, 81];
+    return cardSession();
+  });
+  await expect(client.chooseChampion(76)).rejects.toMatchObject({
+    code: "STALE_SELECTION",
+  });
+  expect(writes(request)).toEqual([]);
+  client.stop();
+});

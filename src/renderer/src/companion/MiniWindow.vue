@@ -106,18 +106,21 @@ const shown = computed(() => {
   );
   return choices.value.kind === "pick" ? sorted.slice(0, 15) : sorted;
 });
-const target = computed(() =>
-  companion.value.championId &&
-  companion.value.championId !== state.value.championId
-    ? companion.value.championId
-    : null,
-);
-const canChoose = (id: number | null) =>
-  id !== null &&
+const pending = ref<number | null>(null);
+const canChoose = (id: number) =>
   state.value.phase === "ChampSelect" &&
   available.value.has(id) &&
   state.value.championId !== id &&
   !choosing.value;
+const heading = computed(
+  () =>
+    ({
+      subset: "选择英雄卡片",
+      bench: "备选席",
+      pick: "可选英雄",
+      none: "换用英雄",
+    })[choices.value.kind],
+);
 async function refreshChoices() {
   const version = ++selectionEpoch;
   if (state.value.phase !== "ChampSelect") {
@@ -140,22 +143,32 @@ async function refreshChoices() {
       };
   }
 }
-/** 用户点“换用”才写入客户端：备选席交换或本人未锁定的预选，不自动锁定。 */
-async function choose(id: number | null) {
+/**
+ * 用户点击头像即写入客户端：卡片阶段选用该卡片（与客户端点卡一致），
+ * 备选席直接交换，峡谷本人回合只预选不锁定。右键只在英雄信息窗查看。
+ */
+async function choose(id: number) {
   if (!canChoose(id)) return;
   choosing.value = true;
+  pending.value = id;
   error.value = "";
+  message.value = "";
   const context = sessionContext();
+  const kind = choices.value.kind;
   try {
-    await unwrap(api.chooseChampion(id!));
+    await unwrap(api.chooseChampion(id));
     if (context !== sessionContext()) return;
-    message.value = "已发送换用请求 · 以客户端结果为准";
+    message.value =
+      kind === "subset"
+        ? `已选用 ${heroes.value.get(id)?.name || id} · 以客户端结果为准`
+        : `已换用 ${heroes.value.get(id)?.name || id} · 以客户端结果为准`;
     await view(null);
     await refreshChoices();
   } catch (e) {
     if (context === sessionContext()) error.value = (e as Error).message;
   } finally {
     choosing.value = false;
+    pending.value = null;
   }
 }
 const ratingText = computed(() =>
@@ -174,12 +187,16 @@ onMounted(() => {
         phaseSince.value = Date.now();
         search.value = "";
         message.value = "";
+        error.value = "";
       }
       void refreshChoices();
     },
     { rating: true },
   );
-  poll = setInterval(() => void refreshChoices(), 2000);
+  // 卡片阶段只有十几秒：选人时每秒刷新，其他阶段不请求。
+  poll = setInterval(() => {
+    if (state.value.phase === "ChampSelect") void refreshChoices();
+  }, 1000);
   clock = setInterval(() => (now.value = Date.now()), 1000);
 });
 onUnmounted(() => {
@@ -227,14 +244,14 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="mini-choices-head">
-          <span>{{
-            choices.kind === "bench"
-              ? "备选席"
+          <span>{{ heading }}</span>
+          <small v-if="choices.kind !== 'none'">{{
+            choices.kind === "subset"
+              ? "点击头像直接选用 · 右键只查看"
               : choices.kind === "pick"
-                ? "可选英雄"
-                : "换用英雄"
-          }}</span>
-          <small>点头像查看方案</small>
+                ? "点击头像直接预选 · 不锁定"
+                : "点击头像直接换用 · 右键只查看"
+          }}</small>
         </div>
         <div v-if="choices.kind === 'pick'" class="mini-search">
           <Search :size="13" /><input
@@ -243,36 +260,45 @@ onUnmounted(() => {
             placeholder="搜索英雄"
           />
         </div>
-        <div v-if="shown.length" class="mini-choice-grid">
+        <div
+          v-if="shown.length"
+          :class="['mini-choice-grid', { cards: choices.kind === 'subset' }]"
+        >
           <button
             v-for="id in shown"
             :key="id"
-            :class="['quick-hero', { active: companion.championId === id }]"
-            :aria-label="'查看' + (heroes.get(id)?.name || id)"
-            :title="heroes.get(id)?.name"
-            @click="view(id)"
+            :class="[
+              'quick-hero',
+              {
+                active:
+                  companion.championId === id && !companion.followingClient,
+                busy: pending === id,
+              },
+            ]"
+            :disabled="choosing"
+            :aria-disabled="!canChoose(id)"
+            :aria-label="
+              (choices.kind === 'subset' ? '选用' : '换用') +
+              (heroes.get(id)?.name || id)
+            "
+            :title="
+              (heroes.get(id)?.name || '') +
+              (choices.kind === 'subset' ? ' · 点击选用' : ' · 点击换用')
+            "
+            @click="choose(id)"
+            @contextmenu.prevent="view(id)"
           >
-            <ChampionIcon :champion="heroes.get(id)" :size="40" /><small>{{
-              percent(stats.get(id)?.winRate)
-            }}</small>
+            <ChampionIcon
+              :champion="heroes.get(id)"
+              :size="choices.kind === 'subset' ? 58 : 40"
+            /><b v-if="choices.kind === 'subset'">{{
+              heroes.get(id)?.name || id
+            }}</b
+            ><small>{{ percent(stats.get(id)?.winRate) }}</small>
+            <RefreshCw v-if="pending === id" :size="14" class="spinning" />
           </button>
         </div>
         <p v-else class="mini-reason">{{ choices.reason }}</p>
-        <button
-          v-if="choices.kind !== 'none'"
-          class="mini-swap"
-          :disabled="!canChoose(target)"
-          :aria-label="
-            '换用' + (target ? heroes.get(target)?.name || target : '英雄')
-          "
-          @click="choose(target)"
-        >
-          <RefreshCw v-if="choosing" :size="14" class="spinning" />{{
-            target
-              ? "换用 " + (heroes.get(target)?.name || target)
-              : "先点击上方头像"
-          }}
-        </button>
       </section>
       <section v-else class="mini-status">
         <div :class="['mini-emblem', { live: inRoom }]">

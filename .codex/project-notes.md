@@ -92,3 +92,6 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 小窗贴靠：client-window.ts 用 user32 FindWindowW("RCLIENT")+GetWindowRect 只读取客户端窗口矩形，screenToDipRect 换算；alignToClient 右侧优先、一侧不够时 Mini 右/信息窗左，否则退回右上角；用户 will-move 拖动后不再自动贴靠。实测 2048×1232 DIP 工作区、居中 1280×720 客户端时 Mini 在 x=1672。
 - 主进程 TDZ 教训：ready-to-show 可能在 await loadURL 期间触发，被提前调用的函数里不能引用后面才初始化的 const；真实桌面冒烟会因主进程 Error 对话框卡在 electron.launch 超时。
 - 海斗分：Hexdata 官网仅登录后查询、无公开第三方 API（合作需经其 QQ 群）。“官方查分”改为助手内独立窗口（partition persist:hexdata、无 preload、拒绝权限、仅允许 *.hexdata.com.cn 导航，其他链接交系统浏览器），实测 window.assistant 为 undefined。不读取其 Cookie/页面数据，不生成替代分。
+- 2026-10-29 实战反馈：海克斯新选人是“二选一英雄卡片”，Mini 窗原先读不到，并报“数据格式无法解析”。根因①：LCU 写接口（bench swap、PATCH action、ready-check accept）成功时返回 204 空体，jsonRequest 强行 JSON.parse 报错，现空体返回 undefined。根因②：卡片属于 subset pick（session.allowSubsetChampionPicks + timer.phase=BAN_PICK），列表来自 /lol-lobby-team-builder/champ-select/v1/subset-champion-list（参考 Akari，其注释称规则抄自客户端）。无英雄时点卡片 PATCH 本人未完成 pick action {completed:true}；已选后同阶段只可 bench swap 本次卡片中的英雄。
+- 用户改为“点头像就直接换”：Mini 窗左键即写入（卡片选用/备选席交换/峡谷预选不锁定），右键只查看；不可用头像 aria-disabled 且 choose 内再核对。选人阶段每秒刷新可选项，阶段变化清除旧错误。
+- 真实卡片阶段尚未用新代码实测（当时客户端在大厅）。scripts/inspect-champ-select.ts（npm run inspect:champ-select）只读打印脱敏会话结构。用户的 npm run dev 实例运行时桌面冒烟会因单实例锁直接退出，不得为测试关闭用户实例；主进程改动需用户重启 dev 才生效。

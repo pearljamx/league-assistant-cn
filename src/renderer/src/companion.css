@@ -196,6 +196,41 @@ body:has(.companion-shell) {
   border-color: var(--gold);
   background: #cfb47b12;
 }
+.quick-hero {
+  position: relative;
+}
+.quick-hero[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.45;
+}
+.quick-hero:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+.quick-hero.busy svg {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  color: var(--gold);
+}
+.mini-choice-grid.cards {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.mini-choice-grid.cards .quick-hero {
+  padding: 10px 0 8px;
+  border-color: #cfb47b40;
+  background: #cfb47b0a;
+}
+.mini-choice-grid.cards .quick-hero:hover {
+  border-color: var(--gold);
+  background: #cfb47b18;
+}
+.mini-choice-grid.cards b {
+  font-size: 12px;
+  font-weight: 500;
+  margin-top: 3px;
+}
 .quick-hero small {
   font-size: 9px;
   color: var(--muted);
@@ -205,24 +240,6 @@ body:has(.companion-shell) {
   color: var(--muted);
   text-align: center;
   padding: 10px 0;
-}
-.mini-swap {
-  height: 32px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #172020;
-  background: var(--gold);
-}
-.mini-swap:disabled {
-  cursor: default;
-  color: var(--muted);
-  background: #1c2629;
-  opacity: 1;
 }
 .mini-ops {
   flex-shrink: 0;

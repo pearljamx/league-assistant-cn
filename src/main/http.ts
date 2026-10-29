@@ -18,6 +18,8 @@ export async function jsonRequest<T = any>(
   options: HttpOptions = {},
 ): Promise<T> {
   const bytes = await bytesRequest(url, options);
+  // 客户端写操作常返回 204 空响应：这是成功，不是格式错误。
+  if (!bytes.toString("utf8").trim()) return undefined as T;
   try {
     return JSON.parse(bytes.toString("utf8")) as T;
   } catch {

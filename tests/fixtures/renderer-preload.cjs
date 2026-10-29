@@ -339,6 +339,7 @@ if (companionMode)
     saveSettings: (patch) => remote("settings-save", patch),
     getSelection: () => remote("selection"),
     getRating: () => remote("rating"),
+    getChampionChoices: () => remote("choices"),
     onState: (callback) => remoteSubscribe("state", callback),
     onSettings: (callback) => remoteSubscribe("settings", callback),
   });
@@ -367,5 +368,6 @@ contextBridge.exposeInMainWorld("rendererFixture", {
     historyDelay = milliseconds;
   },
   chooseCalls: () => invoke("choose-calls"),
+  choices: (value) => invoke("patch-choices", value),
   windowActions: () => invoke("window-actions"),
 });

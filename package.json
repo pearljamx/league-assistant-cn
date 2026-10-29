@@ -28,6 +28,7 @@
     "licenses:collect": ".venv-ocr\\Scripts\\python.exe scripts/collect-licenses.py",
     "verify:live": "tsx scripts/verify-live.ts",
     "verify:statistics": "tsx scripts/verify-statistics.ts",
+    "inspect:champ-select": "tsx scripts/inspect-champ-select.ts",
     "test:desktop": "node scripts/smoke-electron.mjs",
     "test:renderer": "node scripts/smoke-renderer.mjs",
     "test:companions": "node scripts/smoke-companions.mjs",

@@ -146,7 +146,8 @@ export interface Selection {
 }
 export interface ChampionChoices {
   championIds: number[];
-  kind: "bench" | "pick" | "none";
+  /** subset：海克斯/大乱斗的英雄卡片；bench：备选席；pick：峡谷本人预选。 */
+  kind: "subset" | "bench" | "pick" | "none";
   reason: string;
 }
 export interface CompanionState {

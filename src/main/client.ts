@@ -421,9 +421,34 @@ export class Client extends EventEmitter {
           action.completed === false,
       );
   }
+  /** 卡片模式的本人选人动作：同时选人时可能没有 isInProgress，只要求本人且未完成。 */
+  private subsetPickAction(session: any) {
+    return (
+      this.pickAction(session) ??
+      (session.actions ?? [])
+        .flat()
+        .find(
+          (action: any) =>
+            Number.isInteger(action.id) &&
+            action.id >= 0 &&
+            action.actorCellId === session.localPlayerCellId &&
+            action.type === "pick" &&
+            action.completed === false,
+        )
+    );
+  }
+  /** 新版大乱斗在 BAN_PICK 阶段给每人几张英雄卡片（与客户端界面规则一致）。 */
+  private isSubsetPhase(session: any) {
+    return (
+      (this.state.mode === "aram" || this.state.mode === "hex") &&
+      session?.allowSubsetChampionPicks === true &&
+      session?.timer?.phase === "BAN_PICK"
+    );
+  }
   private choicesFromSession(
     session: any,
     pickable: number[],
+    subset: number[] = [],
   ): ChampionChoices {
     if (!this.ownsLocalCell(session))
       return {
@@ -431,6 +456,36 @@ export class Client extends EventEmitter {
         kind: "none",
         reason: "无法确认本人选人位置，请在客户端操作",
       };
+    const valid = (id: unknown): id is number =>
+      Number.isInteger(id) && (id as number) > 0;
+    const current =
+      Number(
+        session.myTeam?.find(
+          (member: any) => member.cellId === session.localPlayerCellId,
+        )?.championId,
+      ) || 0;
+    if (this.isSubsetPhase(session)) {
+      const cards = subset
+        .filter(valid)
+        .filter((id) => !pickable.length || pickable.includes(id));
+      if (!current) {
+        const action = this.subsetPickAction(session);
+        return action && cards.length
+          ? {
+              championIds: cards,
+              kind: "subset",
+              reason: "点击头像直接选用英雄卡片",
+            }
+          : { championIds: [], kind: "none", reason: "等待英雄卡片出现" };
+      }
+      return session.benchEnabled === true
+        ? {
+            championIds: cards.filter((id) => id !== current),
+            kind: "bench",
+            reason: "本阶段只能换用本次卡片中的英雄",
+          }
+        : { championIds: [], kind: "none", reason: "已选用英雄卡片" };
+    }
     if (this.state.mode === "aram" || this.state.mode === "hex") {
       const ids =
         session.benchEnabled === true
@@ -439,11 +494,11 @@ export class Client extends EventEmitter {
             )
           : [];
       return {
-        championIds: ids.filter((id: number) => Number.isInteger(id) && id > 0),
+        championIds: ids.filter((id: number) => valid(id) && id !== current),
         kind: session.benchEnabled === true ? "bench" : "none",
         reason:
           session.benchEnabled === true
-            ? "可直接换用当前备选席英雄"
+            ? "点击头像直接换用备选席英雄"
             : "当前客户端未开放备选席换用",
       };
     }
@@ -458,6 +513,30 @@ export class Client extends EventEmitter {
         : "等待本人选人回合，不能修改队友或已锁定的英雄",
     };
   }
+  /** 读取会话及所需列表后计算可选英雄；每一步都核对账号、阶段与连接。 */
+  private async readChoices(current: () => void) {
+    const session = await this.request("/lol-champ-select/v1/session");
+    current();
+    const list = async (path: string) => {
+      const value = await this.request<number[]>(path).catch(() => []);
+      current();
+      return Array.isArray(value) ? value : [];
+    };
+    const subsetPhase = this.isSubsetPhase(session);
+    const subset = subsetPhase
+      ? await list(
+          "/lol-lobby-team-builder/champ-select/v1/subset-champion-list",
+        )
+      : [];
+    const pickable =
+      subsetPhase || (this.state.mode === "rift" && this.pickAction(session))
+        ? await list("/lol-champ-select/v1/pickable-champion-ids")
+        : [];
+    return {
+      session,
+      choices: this.choicesFromSession(session, pickable, subset),
+    };
+  }
   async getChampionChoices(): Promise<ChampionChoices> {
     if (this.state.phase !== "ChampSelect" || this.state.status !== "connected")
       return {
@@ -466,19 +545,7 @@ export class Client extends EventEmitter {
         reason: "进入选人后可换用英雄；现在可先查看推荐",
       };
     const current = this.championChoiceGuard();
-    const session = await this.request("/lol-champ-select/v1/session");
-    current();
-    const pickable =
-      this.state.mode === "rift" && this.pickAction(session)
-        ? await this.request<number[]>(
-            "/lol-champ-select/v1/pickable-champion-ids",
-          )
-        : [];
-    current();
-    return this.choicesFromSession(
-      session,
-      Array.isArray(pickable) ? pickable : [],
-    );
+    return (await this.readChoices(current)).choices;
   }
   async chooseChampion(championId: number): Promise<void> {
     if (!Number.isInteger(championId) || championId < 1 || championId > 100000)
@@ -488,19 +555,7 @@ export class Client extends EventEmitter {
     const current = this.championChoiceGuard();
     this.choosingChampion = true;
     try {
-      const session = await this.request("/lol-champ-select/v1/session");
-      current();
-      const pickable =
-        this.state.mode === "rift"
-          ? await this.request<number[]>(
-              "/lol-champ-select/v1/pickable-champion-ids",
-            )
-          : [];
-      current();
-      const choices = this.choicesFromSession(
-        session,
-        Array.isArray(pickable) ? pickable : [],
-      );
+      const { session, choices } = await this.readChoices(current);
       if (!choices.championIds.includes(championId))
         throw new AppError(
           "该英雄当前不可换用，请刷新或在客户端操作。",
@@ -513,12 +568,8 @@ export class Client extends EventEmitter {
       if (phase !== "ChampSelect")
         throw new AppError("已离开选人阶段。", "CHAMPION_INVALID_PHASE");
       // Verify a second fresh session immediately before the only explicit user-triggered write.
-      const latest = await this.request("/lol-champ-select/v1/session");
-      current();
-      const fresh = this.choicesFromSession(
-        latest,
-        Array.isArray(pickable) ? pickable : [],
-      );
+      const { session: latest, choices: fresh } =
+        await this.readChoices(current);
       if (
         latest.localPlayerCellId !== session.localPlayerCellId ||
         fresh.kind !== choices.kind ||
@@ -532,6 +583,16 @@ export class Client extends EventEmitter {
         await this.request(
           `/lol-champ-select/v1/session/bench/swap/${championId}`,
           "POST",
+        );
+      } else if (fresh.kind === "subset") {
+        // 选用卡片与在客户端点卡片一致：卡片本身就是确认，没有单独的锁定步骤。
+        const action = this.subsetPickAction(latest);
+        if (!action || action.id !== this.subsetPickAction(session)?.id)
+          throw new AppError("英雄卡片已变化，请重新选择。", "STALE_SELECTION");
+        await this.request(
+          `/lol-champ-select/v1/session/actions/${action.id}`,
+          "PATCH",
+          { championId, completed: true },
         );
       } else {
         const action = this.pickAction(latest);

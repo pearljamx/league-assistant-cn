@@ -55,6 +55,11 @@ try {
   ).toHaveAttribute("aria-checked", "true");
   report.checks.push("匹配与确认阶段状态切换，Mini 窗开关可修改自动接受");
   await picker.evaluate(async () => {
+    await window.rendererFixture.choices({
+      championIds: [202, 22],
+      kind: "subset",
+      reason: "隔离测试英雄卡片",
+    });
     await window.rendererFixture.selection({
       members: [
         {
@@ -62,60 +67,89 @@ try {
           puuid: "fixture-player",
           summonerId: 1,
           name: "测试账号#TEST",
-          championId: 202,
+          championId: 0,
           position: "",
         },
       ],
-      bench: [22, 99],
+      bench: [],
       localCellId: 0,
-      championId: 202,
+      championId: null,
     });
     await window.rendererFixture.state({
       phase: "ChampSelect",
-      championId: 202,
+      championId: null,
     });
     await window.assistant.selectCompanionChampion(null);
   });
-  await expect(picker.locator(".mini-current strong")).toHaveText("测试英雄一");
-  await expect(picker.locator(".quick-hero")).toHaveCount(2);
-  await expect(picker.locator(".mini-swap")).toBeDisabled();
-  await expect(info.locator(".companion-hero-heading h1")).toHaveText(
-    "测试英雄一",
+  await expect(picker.locator(".mini-current strong")).toHaveText(
+    "尚未选择英雄",
   );
+  await expect(
+    picker.locator(".mini-choice-grid.cards .quick-hero"),
+  ).toHaveCount(2);
+  await expect(picker.locator(".mini-choices-head")).toContainText(
+    "选择英雄卡片",
+  );
+  report.checks.push("英雄卡片出现时 Mini 窗立即列出可选卡片");
+  await picker.screenshot({
+    path: "artifacts/screenshots/companion-cards-fixture.png",
+  });
   await picker
-    .getByRole("button", { name: "查看测试英雄二", exact: true })
-    .click();
+    .getByRole("button", { name: "选用测试英雄二", exact: true })
+    .click({ button: "right" });
   await expect(info.locator(".companion-hero-heading h1")).toHaveText(
     "测试英雄二",
   );
   await expect
     .poll(() => picker.evaluate(() => window.rendererFixture.chooseCalls()))
     .toEqual([]);
-  report.checks.push("点头像只浏览并同步英雄信息窗，不写入客户端");
+  report.checks.push("右键头像只同步英雄信息窗，不写入客户端");
+  await picker
+    .getByRole("button", { name: "选用测试英雄一", exact: true })
+    .click();
+  await expect
+    .poll(() => picker.evaluate(() => window.rendererFixture.chooseCalls()))
+    .toEqual([202]);
+  await expect(picker.locator(".mini-current strong")).toHaveText("测试英雄一");
+  await expect(
+    picker.getByRole("button", { name: "换用测试英雄二", exact: true }),
+  ).toBeVisible();
+  report.checks.push("点击卡片头像一次即选用，随后显示可换用的其余卡片");
   await picker
     .getByRole("button", { name: "换用测试英雄二", exact: true })
     .click();
   await expect
     .poll(() => picker.evaluate(() => window.rendererFixture.chooseCalls()))
-    .toEqual([22]);
+    .toEqual([202, 22]);
   await expect(picker.locator(".mini-current strong")).toHaveText("测试英雄二");
+  await picker.evaluate(() =>
+    window.rendererFixture.choices({
+      championIds: [202, 22],
+      kind: "bench",
+      reason: "隔离测试备选席",
+    }),
+  );
+  await expect(
+    picker.getByRole("button", { name: "换用测试英雄二", exact: true }),
+  ).toHaveAttribute("aria-disabled", "true");
   await picker
-    .getByRole("button", { name: "查看测试英雄二", exact: true })
-    .click();
-  await expect(picker.locator(".mini-swap")).toBeDisabled();
-  report.checks.push("换用仅调用一次模拟接口，当前英雄不可重复换用");
+    .getByRole("button", { name: "换用测试英雄二", exact: true })
+    .click({ force: true });
+  await picker.waitForTimeout(300);
+  expect(
+    await picker.evaluate(() => window.rendererFixture.chooseCalls()),
+  ).toEqual([202, 22]);
+  report.checks.push("点击备选席头像一次即换用，当前英雄不可重复换用");
   await info.evaluate(() => window.rendererFixture.delayRecommendation(700));
   await picker
-    .getByRole("button", { name: "查看测试英雄三", exact: true })
-    .click();
-  await picker
-    .getByRole("button", { name: "查看测试英雄二", exact: true })
-    .click();
+    .getByRole("button", { name: "换用测试英雄一", exact: true })
+    .click({ button: "right" });
+  await info.getByRole("button", { name: /回到当前英雄/ }).click();
   await info.getByRole("tab", { name: "符文", exact: true }).click();
   await expect(info.locator(".compact-rune")).toContainText("测试符文方案22");
   await info.waitForTimeout(800);
   await expect(info.locator(".compact-rune")).not.toContainText(
-    "测试符文方案99",
+    "测试符文方案202",
   );
   report.checks.push("迟到的旧英雄推荐不能覆盖新英雄方案");
   await picker.evaluate(async () => {
