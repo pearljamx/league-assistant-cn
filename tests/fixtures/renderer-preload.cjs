@@ -73,6 +73,7 @@ const catalog = names.map((name, index) => ({
 }));
 const perks = [8005, 9111, 9104, 8014, 8139, 8140, 5008, 5008, 5011];
 const runeCalls = [];
+const notes = new Map();
 let recommendationDelay = 0;
 let historyDelay = 0;
 const fixturePlayers = () => [
@@ -319,6 +320,50 @@ const api = {
   openExternal: unavailable,
   scanAugments: unavailable,
   mainWindow: (action) => remote("window", "main:" + action),
+  getPlayerNote: (puuid) => ok(notes.get(puuid) ?? null),
+  savePlayerNote: (input) => {
+    if (!input.tag && !input.note.trim()) {
+      notes.delete(input.puuid);
+      return ok(null);
+    }
+    const value = {
+      ...input,
+      note: input.note.trim(),
+      platform: state.platform,
+      updatedAt: "2026-10-29T00:00:00Z",
+    };
+    notes.set(input.puuid, value);
+    return ok(value);
+  },
+  listPlayerNotes: () => ok([...notes.values()]),
+  deletePlayerNote: (puuid) => {
+    notes.delete(puuid);
+    return ok(undefined);
+  },
+  getEncounters: (puuid) => {
+    const match = fixtureMatch();
+    const self = match.players.find(
+      (player) => player.puuid === state.summoner?.puuid,
+    );
+    const other = match.players.find((player) => player.puuid === puuid);
+    const games =
+      self && other
+        ? [
+            {
+              matchId: match.id,
+              date: match.date,
+              queueId: match.queueId,
+              mode: match.mode,
+              sameTeam: other.teamId === self.teamId,
+              win: self.win,
+              myChampionId: self.championId,
+              theirChampionId: other.championId,
+            },
+          ]
+        : [];
+    return ok({ puuid, name: other?.name ?? "", total: games.length, games });
+  },
+  clearEncounters: () => ok(undefined),
   onCloseRequest: () => () => {},
   onState: subscribe("state"),
   onSettings: subscribe("settings"),

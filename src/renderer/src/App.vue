@@ -4,9 +4,7 @@ import { CircleAlert, X } from "@lucide/vue";
 import { api } from "./api";
 import {
   acceptState,
-  catalog,
   page,
-  playerRequest,
   refreshCatalog,
   settings,
   state,
@@ -17,7 +15,7 @@ import TitleBar from "./components/shell/TitleBar.vue";
 import SettingsModal from "./components/SettingsModal.vue";
 import SearchPane from "./components/SearchPane.vue";
 import CloseConfirm from "./components/CloseConfirm.vue";
-import HistoryWorkspace from "./components/HistoryWorkspace.vue";
+import PlayerTabsView from "./views/PlayerTabsView.vue";
 import LiveGameView from "./views/LiveGameView.vue";
 import ChampionDataView from "./views/ChampionDataView.vue";
 import AutomationView from "./views/AutomationView.vue";
@@ -64,12 +62,7 @@ onUnmounted(() => {
       </div>
       <main class="page-body">
         <KeepAlive>
-          <HistoryWorkspace
-            v-if="page === 'history'"
-            :state="state"
-            :catalog="catalog"
-            :request="playerRequest"
-          />
+          <PlayerTabsView v-if="page === 'history'" />
           <LiveGameView v-else-if="page === 'live'" />
           <ChampionDataView v-else-if="page === 'data'" />
           <AutomationView v-else-if="page === 'automation'" />

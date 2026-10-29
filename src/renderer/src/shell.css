@@ -164,6 +164,66 @@
 .title-account i {
   margin: 0 5px;
 }
+.title-tabs {
+  display: flex;
+  align-items: flex-end;
+  align-self: stretch;
+  gap: 2px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.title-tabs::-webkit-scrollbar {
+  display: none;
+}
+.title-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 31px;
+  padding: 0 10px;
+  border-radius: 7px 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-bottom: 0;
+}
+div.title-tab {
+  padding: 0 4px 0 10px;
+}
+.title-tab:hover {
+  color: var(--text);
+  background: #ffffff06;
+}
+.title-tab.active {
+  color: var(--text);
+  background: var(--bg);
+  border-color: var(--line-strong);
+  margin-bottom: -1px;
+  height: 32px;
+}
+button.title-tab.active svg {
+  color: var(--gold);
+}
+.title-tab-label {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: inherit;
+  font-size: 12px;
+}
+.title-tab-close {
+  display: flex;
+  padding: 3px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.title-tab-close:hover {
+  color: var(--text);
+  background: #ffffff12;
+}
 .title-search {
   margin-left: auto;
   display: flex;
@@ -583,6 +643,32 @@
   position: absolute;
   top: 16px;
   right: 16px;
+}
+.note-tag {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #172020;
+  background: var(--secondary);
+}
+.note-tag.good {
+  background: #91c9b3;
+}
+.note-tag.friend {
+  background: #e8c06a;
+}
+.note-tag.watch {
+  background: #d9b36a;
+}
+.note-tag.avoid {
+  background: #db9397;
+}
+.note-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .settings-disclaimer {
   margin-top: 16px;

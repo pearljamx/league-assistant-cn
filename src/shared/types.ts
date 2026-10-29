@@ -213,6 +213,34 @@ export interface MatchPage {
   warning: string | null;
   fetchedAt: string;
 }
+/** 玩家标记只保存在本机：好队友 / 需留意 / 不想再遇 / 朋友。 */
+export type PlayerTag = "good" | "watch" | "avoid" | "friend";
+export interface PlayerNote {
+  puuid: string;
+  name: string;
+  platform: string | null;
+  tag: PlayerTag | null;
+  note: string;
+  updatedAt: string;
+}
+/** 本人对局中与某位公开玩家同局的一场记录（只来自本人战绩）。 */
+export interface EncounterGame {
+  matchId: string;
+  date: string;
+  queueId: number;
+  mode: string;
+  sameTeam: boolean;
+  /** 本人在这一局是否获胜。 */
+  win: boolean;
+  myChampionId: number;
+  theirChampionId: number;
+}
+export interface EncounterSummary {
+  puuid: string;
+  name: string;
+  total: number;
+  games: EncounterGame[];
+}
 export interface Catalog {
   champions: Champion[];
   items: Record<string, { name: string; icon: string }>;
@@ -320,6 +348,17 @@ export interface AssistantApi {
     Result<{ id: number; name: string; width: number; height: number }[]>
   >;
   mainWindow(action: "tray" | "quit"): Promise<Result<void>>;
+  getPlayerNote(puuid: string): Promise<Result<PlayerNote | null>>;
+  savePlayerNote(note: {
+    puuid: string;
+    name: string;
+    tag: PlayerTag | null;
+    note: string;
+  }): Promise<Result<PlayerNote | null>>;
+  listPlayerNotes(): Promise<Result<PlayerNote[]>>;
+  deletePlayerNote(puuid: string): Promise<Result<void>>;
+  getEncounters(puuid: string): Promise<Result<EncounterSummary>>;
+  clearEncounters(): Promise<Result<void>>;
   onCloseRequest(callback: () => void): () => void;
   onState(callback: (state: ConnectionState) => void): () => void;
   onSelection(callback: (selection: Selection) => void): () => void;

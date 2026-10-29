@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Search, Zap } from "@lucide/vue";
-import { page, save, settings, state } from "../../store";
+import { History, Search, X, Zap } from "@lucide/vue";
+import {
+  activeTab,
+  closePlayerTab,
+  page,
+  playerTabs,
+  save,
+  settings,
+  state,
+} from "../../store";
 import { modeName, phaseNames } from "../../format";
 import { version as appVersion } from "../../../../../package.json";
 
@@ -12,6 +20,7 @@ const titles: Record<string, string> = {
   data: "英雄数据",
   automation: "自动化",
 };
+const selectTab = (id: string) => (activeTab.value = id);
 const live = computed(() =>
   ["ChampSelect", "GameStart", "InProgress", "Reconnect"].includes(
     state.value.phase,
@@ -21,7 +30,45 @@ const live = computed(() =>
 
 <template>
   <header class="title-bar">
-    <div class="title-left">
+    <div
+      v-if="page === 'history'"
+      class="title-tabs"
+      role="tablist"
+      aria-label="玩家标签"
+    >
+      <button
+        role="tab"
+        :aria-selected="activeTab === 'self'"
+        :class="['title-tab', { active: activeTab === 'self' }]"
+        @click="selectTab('self')"
+      >
+        <History :size="13" />我的战绩
+      </button>
+      <div
+        v-for="tab in playerTabs"
+        :key="tab.puuid"
+        :class="['title-tab', { active: activeTab === tab.puuid }]"
+      >
+        <button
+          role="tab"
+          class="title-tab-label"
+          :aria-selected="activeTab === tab.puuid"
+          :title="tab.name + '（中键关闭）'"
+          @click="selectTab(tab.puuid)"
+          @mousedown.middle.prevent="closePlayerTab(tab.puuid)"
+        >
+          {{ tab.name.split("#")[0] || "公开玩家" }}
+        </button>
+        <button
+          class="title-tab-close"
+          :aria-label="'关闭标签 ' + tab.name"
+          @click.stop="closePlayerTab(tab.puuid)"
+        >
+          <X :size="12" />
+        </button>
+      </div>
+    </div>
+    <div v-else class="title-left">
       <strong>{{ titles[page] }}</strong>
       <span v-if="state.summoner" class="title-account"
         >{{ state.summoner.gameName

@@ -36,6 +36,7 @@ import {
 import { clientWindowRect } from "./client-window";
 import { setPublicFetcher } from "./http";
 import { createTray } from "./tray";
+import { PlayerStore, playerTags } from "./players";
 import type { Result } from "../shared/types";
 
 const current = dirname(fileURLToPath(import.meta.url));
@@ -161,7 +162,8 @@ else {
       const history = new HistoryProvider(client, storage),
         liveGame = new LiveGameProvider(client),
         rating = new SkillRatingProvider(),
-        runes = new RuneService(client, storage, tencent);
+        runes = new RuneService(client, storage, tencent),
+        players = new PlayerStore(storage);
       recognition = new RecognitionService(
         client,
         storage,
@@ -336,12 +338,59 @@ else {
           band.parse(value),
         ),
       );
-      handle("history", (puuid, start) =>
-        history.history(
-          id.parse(puuid),
+      handle("history", async (puuid, start) => {
+        const target = id.parse(puuid);
+        const owner = client.state.summoner?.puuid,
+          platform = client.state.platform;
+        const page = await history.history(
+          target,
           z.number().int().min(0).max(10000).parse(start),
-        ),
+        );
+        // 只用本人战绩记录“遇到过的玩家”，且账号与大区在请求期间未变化。
+        if (
+          owner &&
+          target === owner &&
+          client.state.summoner?.puuid === owner &&
+          client.state.platform === platform
+        )
+          void players.record(owner, platform, page.matches).catch(() => {});
+        return page;
+      });
+      const currentOwner = () => {
+        const owner = client.state.summoner?.puuid;
+        if (!owner || client.state.status !== "connected")
+          throw new AppError("请先连接并登录客户端。", "CLIENT_OFFLINE");
+        return { owner, platform: client.state.platform };
+      };
+      const noteInput = z
+        .object({
+          puuid: id,
+          name: z.string().max(64),
+          tag: z.enum(playerTags as [string, ...string[]]).nullable(),
+          note: z.string().max(200),
+        })
+        .strict();
+      handle("player-note", (value) => players.note(id.parse(value)));
+      handle("player-note-save", (value) => {
+        const input = noteInput.parse(value);
+        return players.saveNote({
+          ...input,
+          tag: input.tag as (typeof playerTags)[number] | null,
+          platform: client.state.platform,
+        });
+      });
+      handle("player-notes", () => players.listNotes());
+      handle("player-note-delete", (value) =>
+        players.deleteNote(id.parse(value)),
       );
+      handle("encounters", (value) => {
+        const { owner, platform } = currentOwner();
+        return players.encounters(owner, platform, id.parse(value));
+      });
+      handle("encounters-clear", () => {
+        const { owner, platform } = currentOwner();
+        return players.clearEncounters(owner, platform);
+      });
       handle("match", (value) => history.match(matchId.parse(value)));
       handle("summoner", (value) =>
         client.findSummoner(z.string().min(1).max(100).parse(value)),

@@ -88,14 +88,36 @@ export function browseHero(id: number, navigate = false) {
 export function followClientHero() {
   dataHero.value = { id: state.value.championId, follow: true };
 }
-/** 打开玩家详情的请求；nonce 让重复打开同一玩家也能刷新。 */
-export const playerRequest = ref<(PlayerTarget & { nonce: number }) | null>(
-  null,
-);
-let playerNonce = 0;
+/** 战绩页的玩家标签：本人标签固定在最前（"self"），其他玩家按打开顺序排列。 */
+export const playerTabs = ref<PlayerTarget[]>([]);
+export const activeTab = ref<string>("self");
+const maxTabs = 10;
 export function openPlayer(target: PlayerTarget) {
-  playerRequest.value = { ...target, nonce: ++playerNonce };
   page.value = "history";
+  if (target.puuid === state.value.summoner?.puuid) {
+    activeTab.value = "self";
+    return;
+  }
+  const existing = playerTabs.value.find((tab) => tab.puuid === target.puuid);
+  if (existing) {
+    if (target.name.includes("#") && !existing.name.includes("#"))
+      existing.name = target.name;
+    if (target.level !== null) existing.level = target.level;
+  } else {
+    playerTabs.value.push({ ...target });
+    // 超出上限时关闭最早打开且不在前台的标签。
+    if (playerTabs.value.length > maxTabs) playerTabs.value.shift();
+  }
+  activeTab.value = target.puuid;
+}
+export function closePlayerTab(puuid: string) {
+  const index = playerTabs.value.findIndex((tab) => tab.puuid === puuid);
+  if (index < 0) return;
+  playerTabs.value.splice(index, 1);
+  if (activeTab.value === puuid)
+    activeTab.value =
+      playerTabs.value[Math.min(index, playerTabs.value.length - 1)]?.puuid ??
+      "self";
 }
 export const summonerTarget = (player: Summoner): PlayerTarget => ({
   puuid: player.puuid,
@@ -109,7 +131,16 @@ export async function openRiotId(riotId: string) {
   return player;
 }
 export function acceptState(value: ConnectionState) {
+  const previous = state.value;
   state.value = value;
+  // 换账号或大区后，其他玩家标签属于旧会话，全部关闭。
+  if (
+    previous.summoner?.puuid !== value.summoner?.puuid ||
+    previous.platform !== value.platform
+  ) {
+    playerTabs.value = [];
+    activeTab.value = "self";
+  }
   if (dataHero.value.follow && value.championId !== dataHero.value.id)
     dataHero.value = { id: value.championId, follow: true };
 }

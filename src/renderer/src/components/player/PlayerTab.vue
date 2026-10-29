@@ -5,82 +5,133 @@ import {
   ChevronDown,
   ChevronRight,
   CircleAlert,
+  Filter,
   History,
   RefreshCw,
   ShieldCheck,
+  Tag,
+  Users,
 } from "@lucide/vue";
-import { api, unwrap } from "../api";
-import ChampionIcon from "./ChampionIcon.vue";
-import type { PlayerTarget } from "../store";
+import { api, unwrap } from "../../api";
+import ChampionIcon from "../ChampionIcon.vue";
+import {
+  activeTab,
+  catalog,
+  notify,
+  openPlayer,
+  state,
+  type PlayerTarget,
+} from "../../store";
+import {
+  date,
+  duration,
+  matchMode,
+  playerTagList,
+  playerTagNames,
+  queueGroups,
+  ratio as percent,
+  tierName as tier,
+} from "../../format";
 import type {
-  Catalog,
-  ConnectionState,
+  EncounterSummary,
   Match,
   MatchPage,
   MatchPlayer,
+  PlayerNote,
+  PlayerTag,
   RankedEntry,
   SkillRating,
-} from "../../../shared/types";
+} from "../../../../shared/types";
 
+// 一个玩家标签：各自保存战绩、筛选、展开和资料；标签关闭或换账号时整体卸载。
 const props = defineProps<{
-  state: ConnectionState;
-  catalog: Catalog;
-  request?: (PlayerTarget & { nonce: number }) | null;
+  target: PlayerTarget | null;
+  own: boolean;
+  active: boolean;
 }>();
-const target = ref<PlayerTarget | null>(null);
 const history = ref<MatchPage | null>(null);
 const ranked = ref<RankedEntry[]>([]);
 const rating = ref<SkillRating | null>(null);
 const detail = ref<Match | null>(null);
 const detailId = ref<string | null>(null);
-const busy = ref({ history: false, detail: false });
-const errors = ref({
-  history: "",
-  ranked: "",
-  detail: "",
+const busy = ref({ history: false, detail: false, note: false });
+const errors = ref({ history: "", ranked: "", detail: "", note: "" });
+const note = ref<PlayerNote | null>(null);
+const draft = ref<{ tag: PlayerTag | null; note: string }>({
+  tag: null,
+  note: "",
 });
+const encounters = ref<EncounterSummary | null>(null);
+const filter = ref<{
+  queue: (typeof queueGroups)[number]["id"];
+  result: "all" | "win" | "loss";
+  champion: number;
+}>({ queue: "all", result: "all", champion: 0 });
 let playerEpoch = 0,
   detailEpoch = 0;
 const champions = computed(
-  () => new Map(props.catalog.champions.map((hero) => [hero.id, hero])),
-);
-const ownName = () =>
-  props.state.summoner
-    ? props.state.summoner.gameName +
-      (props.state.summoner.tagLine ? "#" + props.state.summoner.tagLine : "")
-    : "";
-const ownTarget = (): PlayerTarget | null =>
-  props.state.summoner
-    ? {
-        puuid: props.state.summoner.puuid,
-        name: ownName(),
-        level: props.state.summoner.level,
-      }
-    : null;
-const viewingOwn = computed(() =>
-  Boolean(
-    target.value?.puuid && target.value.puuid === props.state.summoner?.puuid,
-  ),
+  () => new Map(catalog.value.champions.map((hero) => [hero.id, hero])),
 );
 const playerFor = (match: Match) =>
-  match.players.find((player) => player.puuid === target.value?.puuid);
+  match.players.find((player) => player.puuid === props.target?.puuid);
+const counted = (match: Match) =>
+  !match.private && !match.remake && match.duration >= 240;
+const filtering = computed(
+  () =>
+    filter.value.queue !== "all" ||
+    filter.value.result !== "all" ||
+    filter.value.champion !== 0,
+);
+/** 只在已加载的对局里筛选；要看更早的对局请继续“加载更多”。 */
+const shown = computed(() =>
+  (history.value?.matches ?? []).filter((match) => {
+    const group = queueGroups.find((item) => item.id === filter.value.queue);
+    if (group && !group.test(match)) return false;
+    const player = playerFor(match);
+    if (filter.value.result !== "all") {
+      if (!player || match.remake || match.private) return false;
+      if (player.win !== (filter.value.result === "win")) return false;
+    }
+    if (filter.value.champion && player?.championId !== filter.value.champion)
+      return false;
+    return true;
+  }),
+);
 const summary = computed(() => {
-  const players = (history.value?.matches ?? [])
-    .filter((match) => !match.private && !match.remake && match.duration >= 240)
+  const players = shown.value
+    .filter(counted)
     .map(playerFor)
     .filter((player): player is MatchPlayer => Boolean(player));
+  const kills = players.reduce((sum, player) => sum + player.kills, 0),
+    deaths = players.reduce((sum, player) => sum + player.deaths, 0),
+    assists = players.reduce((sum, player) => sum + player.assists, 0);
   return {
     games: players.length,
     wins: players.filter((player) => player.win).length,
-    kills: players.reduce((sum, player) => sum + player.kills, 0),
-    deaths: players.reduce((sum, player) => sum + player.deaths, 0),
-    assists: players.reduce((sum, player) => sum + player.assists, 0),
+    kda: players.length
+      ? deaths
+        ? ((kills + assists) / deaths).toFixed(2)
+        : "完美"
+      : "—",
   };
+});
+const championOptions = computed(() => {
+  const ids = new Set<number>();
+  for (const match of history.value?.matches ?? []) {
+    const id = playerFor(match)?.championId;
+    if (id) ids.add(id);
+  }
+  return [...ids].sort((a, b) =>
+    (champions.value.get(a)?.name ?? "").localeCompare(
+      champions.value.get(b)?.name ?? "",
+      "zh-CN",
+    ),
+  );
 });
 const heroSummary = computed(() => {
   const rows = new Map<number, { id: number; games: number; wins: number }>();
   for (const match of history.value?.matches ?? []) {
-    if (match.private || match.remake || match.duration < 240) continue;
+    if (!counted(match)) continue;
     const player = playerFor(match);
     if (!player) continue;
     const value = rows.get(player.championId) ?? {
@@ -94,75 +145,74 @@ const heroSummary = computed(() => {
   }
   return [...rows.values()].sort((a, b) => b.games - a.games).slice(0, 4);
 });
-const kda = (player: MatchPlayer) =>
-  [player.kills, player.deaths, player.assists]
-    .map((value) => (value === null ? "—" : value))
-    .join(" / ");
-const percent = (wins: number, games: number) =>
-  games ? `${((wins / games) * 100).toFixed(0)}%` : "—";
-const duration = (seconds: number | null) =>
-  seconds === null
-    ? "—"
-    : `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
-const date = (raw: string) =>
-  new Date(raw).toLocaleString("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-const mode = (raw: string | number, fallback?: string) =>
-  ({
-    2400: "海克斯大乱斗",
-    450: "极地大乱斗",
-    420: "单双排",
-    440: "灵活排位",
-    430: "匹配",
-    400: "征召匹配",
-    KIWI: "海克斯大乱斗",
-    ARAM: "极地大乱斗",
-    CLASSIC: "召唤师峡谷",
-    hex: "海克斯大乱斗",
-    aram: "极地大乱斗",
-    rift: "召唤师峡谷",
-  })[raw] ||
-  { KIWI: "海克斯大乱斗", ARAM: "极地大乱斗", CLASSIC: "召唤师峡谷" }[
-    fallback || ""
-  ] ||
-  String(raw || "对局");
-const tier = (raw: string) =>
-  ({
-    IRON: "黑铁",
-    BRONZE: "青铜",
-    SILVER: "白银",
-    GOLD: "黄金",
-    PLATINUM: "铂金",
-    EMERALD: "翡翠",
-    DIAMOND: "钻石",
-    MASTER: "大师",
-    GRANDMASTER: "宗师",
-    CHALLENGER: "最强王者",
-  })[raw] || "未定级";
-const currentContext = () =>
-  `${props.state.status}:${props.state.platform}:${props.state.summoner?.puuid}`;
-function clearPlayer() {
-  playerEpoch++;
-  detailEpoch++;
-  target.value = null;
-  history.value = null;
-  ranked.value = [];
-  rating.value = null;
-  detail.value = null;
-  detailId.value = null;
-  busy.value.history = false;
-  busy.value.detail = false;
-  errors.value = { history: "", ranked: "", detail: "" };
+/** 已加载对局里与该玩家同队至少两次的公开玩家（可能是常一起玩的朋友）。 */
+const teammates = computed(() => {
+  const rows = new Map<
+    string,
+    { puuid: string; name: string; games: number; wins: number }
+  >();
+  for (const match of history.value?.matches ?? []) {
+    if (!counted(match)) continue;
+    const self = playerFor(match);
+    if (!self) continue;
+    for (const player of match.players) {
+      if (
+        player.puuid === self.puuid ||
+        !player.puuid ||
+        player.teamId !== self.teamId
+      )
+        continue;
+      const row = rows.get(player.puuid) ?? {
+        puuid: player.puuid,
+        name: player.name,
+        games: 0,
+        wins: 0,
+      };
+      row.games++;
+      if (self.win) row.wins++;
+      rows.set(player.puuid, row);
+    }
+  }
+  return [...rows.values()]
+    .filter((row) => row.games >= 2)
+    .sort((a, b) => b.games - a.games)
+    .slice(0, 5);
+});
+const encounterStats = computed(() => {
+  const games = encounters.value?.games ?? [];
+  const together = games.filter((game) => game.sameTeam),
+    against = games.filter((game) => !game.sameTeam);
+  return {
+    together: together.length,
+    togetherWins: together.filter((game) => game.win).length,
+    against: against.length,
+    againstWins: against.filter((game) => game.win).length,
+  };
+});
+const resultOptions = [
+  { id: "all", name: "全部" },
+  { id: "win", name: "胜" },
+  { id: "loss", name: "负" },
+] as const;
+function resetFilter() {
+  filter.value = { queue: "all", result: "all", champion: 0 };
 }
-async function loadPlayer(value: PlayerTarget, more = false) {
+function showOwnTab() {
+  activeTab.value = "self";
+}
+const kda = (player: MatchPlayer) =>
+  [player.kills, player.deaths, player.assists].join(" / ");
+const currentContext = () =>
+  `${state.value.status}:${state.value.platform}:${state.value.summoner?.puuid}`;
+
+async function loadPlayer(more = false) {
+  const value = props.target;
+  if (!value) {
+    errors.value.history = "请先连接并登录国服客户端。";
+    return;
+  }
   const epoch = ++playerEpoch,
     context = currentContext();
-  target.value = value;
   busy.value.history = true;
   errors.value.history = "";
   if (!more) {
@@ -174,10 +224,7 @@ async function loadPlayer(value: PlayerTarget, more = false) {
     detailEpoch++;
   }
   const start = more ? (history.value?.nextIndex ?? 0) : 0;
-  const valid = () =>
-    epoch === playerEpoch &&
-    context === currentContext() &&
-    target.value?.puuid === value.puuid;
+  const valid = () => epoch === playerEpoch && context === currentContext();
   const ranking = more
     ? Promise.resolve(null)
     : api
@@ -218,17 +265,50 @@ async function loadPlayer(value: PlayerTarget, more = false) {
   }
   await Promise.all([ranking, position]);
 }
-async function showOwn() {
-  const own = ownTarget();
-  if (own) await loadPlayer(own);
-  else {
-    clearPlayer();
-    errors.value.history = "请先连接并登录国服客户端。";
+async function loadExtras() {
+  const value = props.target;
+  if (!value || props.own) return;
+  const epoch = playerEpoch,
+    context = currentContext();
+  const [noteResult, encounterResult] = await Promise.all([
+    api.getPlayerNote(value.puuid),
+    api.getEncounters(value.puuid),
+  ]);
+  if (epoch !== playerEpoch || context !== currentContext()) return;
+  if (noteResult.ok) {
+    note.value = noteResult.data ?? null;
+    draft.value = {
+      tag: note.value?.tag ?? null,
+      note: note.value?.note ?? "",
+    };
+  }
+  if (encounterResult.ok) encounters.value = encounterResult.data ?? null;
+}
+async function saveNote(clear = false) {
+  const value = props.target;
+  if (!value) return;
+  busy.value.note = true;
+  errors.value.note = "";
+  try {
+    note.value = await unwrap(
+      api.savePlayerNote({
+        puuid: value.puuid,
+        name: value.name.slice(0, 64),
+        tag: clear ? null : draft.value.tag,
+        note: clear ? "" : draft.value.note.slice(0, 200),
+      }),
+    );
+    if (clear) draft.value = { tag: null, note: "" };
+    notify(clear ? "已清除玩家标记" : "已保存玩家标记（仅本机）");
+  } catch (error) {
+    errors.value.note = (error as Error).message;
+  } finally {
+    busy.value.note = false;
   }
 }
-async function viewPlayer(player: MatchPlayer) {
+function viewPlayer(player: MatchPlayer) {
   if (!player.puuid) return;
-  await loadPlayer({
+  openPlayer({
     puuid: player.puuid,
     name: player.name || "公开玩家",
     level: null,
@@ -259,29 +339,18 @@ async function openMatch(match: Match) {
   }
 }
 function refresh() {
-  if (target.value) void loadPlayer(target.value);
-  else void showOwn();
+  void loadPlayer();
+  void loadExtras();
 }
-defineExpose({ refresh, showOwn });
 watch(
-  () => [props.state.summoner?.puuid, props.state.platform, props.state.status],
-  () => {
-    clearPlayer();
-    if (props.state.status === "connected") void showOwn();
+  () => filter.value.champion,
+  (id) => {
+    if (id && !championOptions.value.includes(id)) filter.value.champion = 0;
   },
 );
-function openRequest() {
-  if (!props.request) return false;
-  const { nonce: _nonce, ...player } = props.request;
-  void loadPlayer(player);
-  return true;
-}
-watch(
-  () => props.request?.nonce,
-  () => openRequest(),
-);
 onMounted(() => {
-  if (!openRequest()) void showOwn();
+  void loadPlayer();
+  void loadExtras();
 });
 onUnmounted(() => {
   playerEpoch++;
@@ -290,14 +359,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="history-workspace">
+  <section :class="['history-workspace', 'player-tab', { active }]">
     <div class="hw-layout">
       <main class="hw-content">
         <div class="hw-list-heading">
           <div>
             <span class="hw-kicker">MATCH HISTORY</span>
             <h2>
-              {{ viewingOwn ? "我的近期对局" : target?.name || "近期对局" }}
+              {{ own ? "我的近期对局" : target?.name || "近期对局" }}
             </h2>
           </div>
           <span class="hw-list-count"
@@ -311,6 +380,49 @@ onUnmounted(() => {
                 :class="{ spinning: busy.history }"
               /></button
           ></span>
+        </div>
+        <div
+          v-if="history?.matches.length"
+          class="hw-filters"
+          aria-label="战绩筛选"
+        >
+          <Filter :size="14" />
+          <div class="hw-chip-group" role="group" aria-label="模式筛选">
+            <button
+              v-for="group in queueGroups"
+              :key="group.id"
+              :class="{ active: filter.queue === group.id }"
+              :aria-pressed="filter.queue === group.id"
+              @click="filter.queue = group.id"
+            >
+              {{ group.name }}
+            </button>
+          </div>
+          <div class="hw-chip-group" role="group" aria-label="胜负筛选">
+            <button
+              v-for="item in resultOptions"
+              :key="item.id"
+              :class="{ active: filter.result === item.id }"
+              :aria-pressed="filter.result === item.id"
+              @click="filter.result = item.id"
+            >
+              {{ item.name }}
+            </button>
+          </div>
+          <select v-model.number="filter.champion" aria-label="英雄筛选">
+            <option :value="0">全部英雄</option>
+            <option v-for="id in championOptions" :key="id" :value="id">
+              {{ champions.get(id)?.name || id }}
+            </option>
+          </select>
+          <span class="hw-filter-summary"
+            >{{ filtering ? "筛选后" : "已加载" }} {{ summary.games }} 场有效 ·
+            胜率 {{ percent(summary.wins, summary.games) }} · 场均 KDA
+            {{ summary.kda }}</span
+          >
+          <button v-if="filtering" class="hw-filter-reset" @click="resetFilter">
+            清除筛选
+          </button>
         </div>
         <div v-if="history?.warning" class="hw-notice">
           <CircleAlert :size="16" /><span
@@ -332,8 +444,13 @@ onUnmounted(() => {
           <h3>暂无对局记录</h3>
           <p>登录客户端，或在顶部搜索同区公开玩家。</p>
         </div>
+        <div v-else-if="!shown.length" class="hw-empty">
+          <Filter :size="26" />
+          <h3>已加载的对局里没有符合筛选的记录</h3>
+          <p>可以清除筛选，或继续加载更早的对局。</p>
+        </div>
         <article
-          v-for="match in history?.matches ?? []"
+          v-for="match in shown"
           :key="match.id"
           class="hw-match"
           :class="{
@@ -355,7 +472,7 @@ onUnmounted(() => {
                         : "失败"
                       : "对局"
               }}</strong
-              ><span>{{ mode(match.queueId || match.mode, match.mode) }}</span
+              ><span>{{ matchMode(match) }}</span
               ><small>{{ date(match.date) }}</small
               ><small>{{ duration(match.duration) }}</small>
             </div>
@@ -461,7 +578,7 @@ onUnmounted(() => {
           v-if="history?.hasMore"
           class="hw-load-more"
           :disabled="busy.history"
-          @click="target && loadPlayer(target, true)"
+          @click="loadPlayer(true)"
         >
           {{ busy.history ? "读取中…" : "加载更多对局"
           }}<ChevronDown :size="15" />
@@ -470,11 +587,7 @@ onUnmounted(() => {
       <aside class="hw-profile" aria-label="玩家详情">
         <div class="hw-profile-heading">
           <span>玩家详情</span
-          ><button
-            v-if="!viewingOwn"
-            aria-label="返回我的战绩"
-            @click="showOwn"
-          >
+          ><button v-if="!own" aria-label="返回我的战绩" @click="showOwnTab">
             <ArrowLeft :size="14" />我的战绩
           </button>
         </div>
@@ -492,6 +605,9 @@ onUnmounted(() => {
         <span class="hw-region"
           >{{ state.platform || "未连接大区" }} · 国服</span
         >
+        <span v-if="note?.tag" :class="['hw-player-tag', note.tag]">{{
+          playerTagNames[note.tag]
+        }}</span>
         <div class="hw-profile-ranks">
           <div v-for="row in ranked" :key="row.queue">
             <ShieldCheck :size="21" /><span
@@ -528,6 +644,74 @@ onUnmounted(() => {
             rating?.aramhex?.message || "不同来源分别展示，不生成替代分数。"
           }}</small>
         </div>
+        <template v-if="!own && target">
+          <div class="hw-recent-heading">
+            <h3><Tag :size="13" />玩家标记</h3>
+            <span>仅保存在本机</span>
+          </div>
+          <div class="hw-note">
+            <div class="hw-chip-group" role="group" aria-label="玩家标签">
+              <button
+                v-for="item in playerTagList"
+                :key="item.id"
+                :class="[item.id, { active: draft.tag === item.id }]"
+                :aria-pressed="draft.tag === item.id"
+                @click="draft.tag = draft.tag === item.id ? null : item.id"
+              >
+                {{ item.name }}
+              </button>
+            </div>
+            <textarea
+              v-model="draft.note"
+              maxlength="200"
+              rows="2"
+              aria-label="玩家备注"
+              placeholder="备注，例如：喜欢玩辅助、沟通友好"
+            ></textarea>
+            <div class="hw-note-actions">
+              <button
+                class="hw-note-save"
+                :disabled="busy.note"
+                @click="saveNote()"
+              >
+                保存标记
+              </button>
+              <button v-if="note" :disabled="busy.note" @click="saveNote(true)">
+                清除
+              </button>
+            </div>
+            <p v-if="errors.note" class="error">{{ errors.note }}</p>
+          </div>
+          <div class="hw-recent-heading">
+            <h3>遇到过</h3>
+            <span>来自你的战绩记录</span>
+          </div>
+          <div v-if="encounters?.total" class="hw-encounters">
+            <p>
+              同局 <b>{{ encounters.total }}</b> 场 · 队友
+              {{ encounterStats.together }} 场（你胜
+              {{ encounterStats.togetherWins }}）· 对手
+              {{ encounterStats.against }} 场（你胜
+              {{ encounterStats.againstWins }}）
+            </p>
+            <div
+              v-for="game in encounters.games.slice(0, 5)"
+              :key="game.matchId"
+              :class="['hw-encounter', game.win ? 'win' : 'loss']"
+            >
+              <ChampionIcon
+                :champion="champions.get(game.theirChampionId)"
+                :size="24"
+              /><span class="hw-encounter-text"
+                ><b>{{ game.sameTeam ? "队友" : "对手" }}</b
+                >{{ matchMode(game) }} · {{ date(game.date) }}</span
+              ><small>{{ game.win ? "你胜" : "你负" }}</small>
+            </div>
+          </div>
+          <p v-else class="hw-muted">
+            你已加载的战绩里没有与该玩家同局的记录。
+          </p>
+        </template>
         <div class="hw-recent-heading">
           <h3>近期表现</h3>
           <span>当前已加载有效对局</span>
@@ -535,7 +719,7 @@ onUnmounted(() => {
         <div class="hw-profile-stats">
           <div>
             <b>{{ percent(summary.wins, summary.games) }}</b
-            ><span>近期胜率</span>
+            ><span>{{ filtering ? "筛选胜率" : "近期胜率" }}</span>
           </div>
           <div>
             <b>{{ summary.games }}</b
@@ -544,7 +728,7 @@ onUnmounted(() => {
         </div>
         <div class="hw-result-track">
           <span
-            v-for="match in (history?.matches ?? [])
+            v-for="match in shown
               .filter(
                 (match) => !match.private && !match.remake && playerFor(match),
               )
@@ -565,9 +749,27 @@ onUnmounted(() => {
           ><strong>{{ percent(hero.wins, hero.games) }}</strong>
         </div>
         <p v-if="!heroSummary.length" class="hw-muted">读取战绩后展示。</p>
-        <p class="hw-profile-note">
-          点击历史或实时对局中的公开玩家，可在这里查看其段位和近期战绩。
-        </p>
+        <template v-if="teammates.length">
+          <div class="hw-recent-heading">
+            <h3><Users :size="13" />常一起玩</h3>
+            <span>已加载对局里同队 ≥2 场</span>
+          </div>
+          <button
+            v-for="mate in teammates"
+            :key="mate.puuid"
+            class="hw-teammate"
+            :aria-label="'查看常一起玩的玩家 ' + mate.name"
+            @click="
+              openPlayer({ puuid: mate.puuid, name: mate.name, level: null })
+            "
+          >
+            <span>{{ mate.name || "公开玩家" }}</span
+            ><small
+              >{{ mate.games }} 场 · 胜率
+              {{ percent(mate.wins, mate.games) }}</small
+            >
+          </button>
+        </template>
       </aside>
     </div>
   </section>
@@ -1115,5 +1317,180 @@ onUnmounted(() => {
     width: 20px;
     height: 20px;
   }
+}
+.hw-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 14px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #141e22;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.hw-chip-group {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: #0f171a;
+}
+.hw-chip-group button {
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.hw-chip-group button:hover {
+  color: var(--text);
+}
+.hw-chip-group button.active {
+  color: var(--gold-light);
+  background: #cfb47b1c;
+}
+.hw-filters select {
+  min-height: 28px;
+  padding: 3px 26px 3px 9px;
+  font-size: 11px;
+}
+.hw-filter-summary {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--secondary);
+}
+.hw-filter-reset {
+  font-size: 11px;
+  color: var(--gold);
+}
+.hw-player-tag {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.hw-player-tag.good,
+.hw-note .hw-chip-group button.good.active {
+  color: #10201a;
+  background: #91c9b3;
+}
+.hw-player-tag.friend,
+.hw-note .hw-chip-group button.friend.active {
+  color: #1b1408;
+  background: #e8c06a;
+}
+.hw-player-tag.watch,
+.hw-note .hw-chip-group button.watch.active {
+  color: #1d1a10;
+  background: #d9b36a;
+}
+.hw-player-tag.avoid,
+.hw-note .hw-chip-group button.avoid.active {
+  color: #2a1112;
+  background: #db9397;
+}
+.hw-recent-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.hw-note {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: left;
+}
+.hw-note .hw-chip-group {
+  flex-wrap: wrap;
+}
+.hw-note textarea {
+  resize: vertical;
+  min-height: 46px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text);
+  background: #0f171a;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+}
+.hw-note-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.hw-note-actions button {
+  padding: 3px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--secondary);
+}
+.hw-note-actions .hw-note-save {
+  color: #172020;
+  background: var(--gold);
+}
+.hw-note .error {
+  font-size: 11px;
+  color: #e0a3a6;
+}
+.hw-encounters {
+  text-align: left;
+}
+.hw-encounters > p {
+  font-size: 11px;
+  color: var(--secondary);
+  margin-bottom: 6px;
+}
+.hw-encounter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0 4px 6px;
+  border-left: 2px solid #4c6067;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+.hw-encounter.win {
+  border-left-color: var(--green);
+}
+.hw-encounter.loss {
+  border-left-color: #db9397;
+}
+.hw-encounter-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hw-encounter b {
+  font-weight: 500;
+  color: var(--text);
+  margin-right: 5px;
+}
+.hw-teammate {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 5px;
+  font-size: 11px;
+  text-align: left;
+}
+.hw-teammate:hover {
+  background: #ffffff08;
+}
+.hw-teammate span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hw-teammate small {
+  color: var(--muted);
+  white-space: nowrap;
 }
 </style>

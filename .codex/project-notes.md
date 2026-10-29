@@ -101,3 +101,6 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 本轮真实客户端未复测：用户的 npm run dev（electron pid 30476）在运行，桌面冒烟会被单实例锁拦下。
 - 2026-10-29 用户反馈“推荐窗未出现”，并要求去掉“点击头像直接换用 · 右键只查看”和“已选用 X · 以客户端结果为准”两句提示（已删）。只读枚举用户 dev 实例窗口：推荐窗仍是启动时矩形，说明选人阶段从未进入显示流程；隔离实例（--user-data-dir、ASSISTANT_TEST_HOOKS=1 模拟阶段，构建版与 dev 页面均试）无法复现。改为：updateCompanionWindows 先用上次已知客户端位置同步排布并立即 showInactive，再异步读取客户端位置微调，显示不再依赖异步结果；did-finish-load 作为备用就绪信号；尺寸取保存值/默认值（测量值在 125% 缩放下取整会越排越大）。开发版在 local/companion-trace.log 记录最近 120 条显示决策（只有阶段与可见性）。
 - 真实选人阶段的推荐窗仍需用户复测；若仍不出现，请用户发送 %APPDATA%\英雄联盟助手\local\companion-trace.log。
+- ② 2026-10-29 完成：store 的 playerTabs/activeTab（"self" 固定，最多 10 个，换账号或大区清空）；PlayerTabsView 用 v-show 保留各标签实例，关闭才卸载；PlayerTab（原 HistoryWorkspace，git mv）按标签各自加载战绩/段位/评分，筛选只作用于已加载对局（模式按 queueId 再按 mode 判定）。TitleBar 在战绩页显示标签条（中键或 × 关闭）。
+- main/players.ts PlayerStore：备注 player-notes-v1（标签+备注均空即删除）；遇到记录 encounters-v1:{platform}:{owner}，只在 IPC history 返回本人战绩且账号/大区未变时记录，跳过私密/重开/无本人对局与匿名 PUUID，每人最多 30 场、最多 3000 人，读改写串行。IPC 用 zod 校验 PUUID、名字 ≤64、备注 ≤200、标签枚举。
+- 测试：tests/players.test.ts；history 隔离场景 11 项（筛选、新标签与遇到记录、标记保存、复用标签、设置列出标记、关闭后台标签、切号清空且迟到响应无效）。真实客户端隔离实例只读：本人 20 场、144 名公开玩家，同局最多的玩家遇到记录 16 场（均为队友），新标签筛选与遇到行正常。多标签下冒烟断言需限定 .player-tab.active（隐藏标签仍在 DOM）。

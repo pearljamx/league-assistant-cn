@@ -22,37 +22,78 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   page.on("pageerror", (error) => report.errors.push(error.message));
   await page.locator(".main-workspace").waitFor();
+  // 多个玩家标签同时存在（隐藏的用 display:none），断言只针对前台标签。
+  const tab = () => page.locator(".player-tab.active");
+  const tabs = page.locator(".title-tabs [role=tab]");
   await page.getByRole("button", { name: "战绩查询", exact: true }).click();
-  await expect(page.locator(".history-workspace")).toBeVisible();
-  await expect(page.locator(".hw-match")).toHaveCount(1);
-  await expect(page.locator(".hw-match")).toContainText("海克斯大乱斗");
-  await expect(page.locator(".hw-match")).not.toContainText("3270");
-  await expect(page.locator(".hw-profile h2")).toHaveText("测试账号");
-  await expect(page.locator(".hw-profile-ranks")).toContainText("黄金 II");
+  await expect(tab()).toBeVisible();
+  await expect(tab().locator(".hw-match")).toHaveCount(1);
+  await expect(tab().locator(".hw-match")).toContainText("海克斯大乱斗");
+  await expect(tab().locator(".hw-match")).not.toContainText("3270");
+  await expect(tab().locator(".hw-profile h2")).toHaveText("测试账号");
+  await expect(tab().locator(".hw-profile-ranks")).toContainText("黄金 II");
+  await expect(tabs).toHaveCount(1);
   report.checks.push("战绩卡片、玩家资料、段位与近期统计展示");
-  await page
+  await tab().getByRole("button", { name: "极地大乱斗", exact: true }).click();
+  await expect(tab().locator(".hw-match")).toHaveCount(0);
+  await expect(tab().locator(".hw-filter-summary")).toContainText(
+    "筛选后 0 场",
+  );
+  await tab().getByRole("button", { name: "海克斯", exact: true }).click();
+  await tab().getByRole("button", { name: "胜", exact: true }).click();
+  await expect(tab().locator(".hw-match")).toHaveCount(1);
+  await expect(tab().locator(".hw-filter-summary")).toContainText(
+    "筛选后 1 场有效 · 胜率 100%",
+  );
+  await tab().getByRole("button", { name: "负", exact: true }).click();
+  await expect(tab().locator(".hw-match")).toHaveCount(0);
+  await tab().getByRole("button", { name: "清除筛选", exact: true }).click();
+  await expect(tab().locator(".hw-match")).toHaveCount(1);
+  report.checks.push("战绩按模式与胜负筛选，并显示筛选后的胜率与场次");
+  await tab()
     .getByRole("button", { name: "查看玩家 测试队友#TEST", exact: true })
     .click();
-  await expect(page.locator(".hw-profile h2")).toHaveText("测试队友");
-  await expect(page.locator(".hw-list-heading h2")).toHaveText("测试队友#TEST");
-  await page.getByRole("button", { name: "查看单局详情", exact: true }).click();
-  await expect(page.locator(".hw-detail-player")).toHaveCount(3);
-  await page
+  await expect(tab().locator(".hw-profile h2")).toHaveText("测试队友");
+  await expect(tab().locator(".hw-list-heading h2")).toHaveText(
+    "测试队友#TEST",
+  );
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs.nth(1)).toHaveText("测试队友");
+  await expect(tab().locator(".hw-encounters")).toContainText(
+    "同局 1 场 · 队友 1 场",
+  );
+  report.checks.push("打开玩家新建标签，显示与本人同局的遇到记录");
+  await tab().getByRole("button", { name: "好队友", exact: true }).click();
+  await tab()
+    .getByRole("textbox", { name: "玩家备注", exact: true })
+    .fill("沟通友好");
+  await tab().getByRole("button", { name: "保存标记", exact: true }).click();
+  await expect(tab().locator(".hw-player-tag")).toHaveText("好队友");
+  report.checks.push("玩家标签与备注可保存并显示");
+  await tab()
+    .getByRole("button", { name: "查看单局详情", exact: true })
+    .click();
+  await expect(tab().locator(".hw-detail-player")).toHaveCount(3);
+  await tab()
     .getByRole("button", { name: "查看详情玩家 测试对手#TEST", exact: true })
     .click();
-  await expect(page.locator(".hw-profile h2")).toHaveText("测试对手");
+  await expect(tab().locator(".hw-profile h2")).toHaveText("测试对手");
+  await expect(tabs).toHaveCount(3);
   await page.setViewportSize({ width: 1100, height: 850 });
-  await expect(page.locator(".hw-match-players")).toBeHidden();
-  await expect(page.locator(".hw-detail-player")).toHaveCount(0);
-  await page.getByRole("button", { name: "查看单局详情", exact: true }).click();
-  await expect(page.locator(".hw-detail-player")).toHaveCount(3);
-  await page
+  await expect(tab().locator(".hw-match-players")).toBeHidden();
+  await tab()
+    .getByRole("button", { name: "查看单局详情", exact: true })
+    .click();
+  await expect(tab().locator(".hw-detail-player")).toHaveCount(3);
+  await tab()
     .getByRole("button", { name: "查看详情玩家 测试队友#TEST", exact: true })
     .click();
-  await expect(page.locator(".hw-profile h2")).toHaveText("测试队友");
+  await expect(tab().locator(".hw-profile h2")).toHaveText("测试队友");
+  await expect(tabs).toHaveCount(3);
+  await expect(tab().locator(".hw-player-tag")).toHaveText("好队友");
   await page.setViewportSize({ width: 1440, height: 1000 });
   report.checks.push("小屏隐藏卡片成员时仍可从单局详情查询玩家");
-  report.checks.push("历史战绩参与者及单局详情参与者可打开玩家资料");
+  report.checks.push("重复打开同一玩家复用已有标签并保留其状态");
   await page.getByRole("button", { name: "实时对局", exact: true }).click();
   await expect(page.locator(".live-team")).toHaveCount(2);
   await expect(
@@ -61,15 +102,21 @@ try {
   await page
     .getByRole("button", { name: "查看实时玩家 测试队友#TEST", exact: true })
     .click();
-  await expect(page.locator(".hw-profile h2")).toHaveText("测试队友");
+  await expect(tab().locator(".hw-profile h2")).toHaveText("测试队友");
+  await expect(tabs).toHaveCount(3);
   report.checks.push("实时双队展示，公开玩家可查询，隐藏身份禁用查询");
   await page.getByRole("button", { name: "实时对局", exact: true }).click();
   await page.screenshot({
     path: "artifacts/screenshots/history-live-fixture.png",
   });
   await page.getByRole("button", { name: "战绩查询", exact: true }).click();
-  await page.getByRole("button", { name: "返回我的战绩", exact: true }).click();
-  await expect(page.locator(".hw-profile h2")).toHaveText("测试账号");
+  await page.screenshot({
+    path: "artifacts/screenshots/history-tabs-fixture.png",
+  });
+  await tab()
+    .getByRole("button", { name: "返回我的战绩", exact: true })
+    .click();
+  await expect(tab().locator(".hw-profile h2")).toHaveText("测试账号");
   await page.getByRole("button", { name: "搜索召唤师", exact: true }).click();
   await page
     .getByRole("textbox", { name: "查询玩家 Riot ID", exact: true })
@@ -79,13 +126,27 @@ try {
     .getByRole("button", { name: "查询", exact: true })
     .click();
   await expect(page.locator(".search-pane")).toHaveCount(0);
-  await expect(page.locator(".hw-profile h2")).toHaveText("测试对手");
-  await expect(page.locator(".hw-profile-tag")).toContainText("Lv.88");
+  await expect(tab().locator(".hw-profile h2")).toHaveText("测试对手");
+  await expect(tab().locator(".hw-profile-tag")).toContainText("Lv.88");
+  await expect(tabs).toHaveCount(3);
   report.checks.push("搜索同区 Riot ID 与返回本人战绩");
-  await page.evaluate(() => window.rendererFixture.delayHistory(700));
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("button", { name: "玩家标记", exact: true }).click();
+  await expect(page.locator(".settings-modal")).toContainText("测试队友#TEST");
+  await expect(page.locator(".settings-modal")).toContainText("沟通友好");
+  await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+  report.checks.push("设置中列出已标记的玩家");
   await page
+    .getByRole("button", { name: "关闭标签 测试队友#TEST", exact: true })
+    .click();
+  await expect(tabs).toHaveCount(2);
+  await expect(tab().locator(".hw-profile h2")).toHaveText("测试对手");
+  report.checks.push("关闭后台标签不影响当前标签");
+  await page.evaluate(() => window.rendererFixture.delayHistory(700));
+  await tab()
     .getByRole("button", { name: "查看玩家 测试队友#TEST", exact: true })
     .click();
+  await expect(tabs).toHaveCount(3);
   await page.evaluate(() =>
     window.rendererFixture.state({
       summoner: {
@@ -98,13 +159,14 @@ try {
       },
     }),
   );
-  await expect(page.locator(".hw-profile h2")).toHaveText("测试新账号");
+  await expect(tabs).toHaveCount(1);
+  await expect(tab().locator(".hw-profile h2")).toHaveText("测试新账号");
   await page.waitForTimeout(800);
-  await expect(page.locator(".hw-list-heading h2")).toHaveText("我的近期对局");
-  await expect(page.locator(".hw-match-players")).toContainText(
+  await expect(tab().locator(".hw-list-heading h2")).toHaveText("我的近期对局");
+  await expect(tab().locator(".hw-match-players")).toContainText(
     "测试新账号#TEST",
   );
-  await expect(page.locator(".hw-match-players")).not.toContainText(
+  await expect(tab().locator(".hw-match-players")).not.toContainText(
     "测试账号#TEST",
   );
   report.checks.push("切号清除玩家详情及战绩，迟到响应不能覆盖新账号");

@@ -8,18 +8,22 @@ import {
   MonitorCog,
   ScanLine,
   ShieldCheck,
+  Tag,
+  Trash2,
   X,
 } from "@lucide/vue";
 import { api } from "../api";
-import { notify, save, settings, state } from "../store";
-import type { CloseAction } from "../../../shared/types";
+import { notify, openPlayer, save, settings, state } from "../store";
+import { date, playerTagNames } from "../format";
+import type { CloseAction, PlayerNote } from "../../../shared/types";
 import { version as appVersion } from "../../../../package.json";
 
-defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: [] }>();
 const sections = [
   { id: "general", name: "通用", icon: MonitorCog },
   { id: "windows", name: "多窗口", icon: AppWindow },
   { id: "recognition", name: "海克斯识别", icon: ScanLine },
+  { id: "players", name: "玩家标记", icon: Tag },
   { id: "data", name: "数据与隐私", icon: ShieldCheck },
   { id: "about", name: "关于", icon: Info },
 ] as const;
@@ -31,7 +35,27 @@ async function openCompanions() {
   const result = await api.companionWindow("show");
   if (!result.ok) notify(result.error || "无法打开客户端小窗");
 }
+const notes = ref<PlayerNote[]>([]);
+async function loadNotes() {
+  const result = await api.listPlayerNotes();
+  if (result.ok) notes.value = result.data ?? [];
+}
+async function removeNote(puuid: string) {
+  const result = await api.deletePlayerNote(puuid);
+  if (result.ok)
+    notes.value = notes.value.filter((item) => item.puuid !== puuid);
+  else notify(result.error || "删除失败");
+}
+async function clearEncounters() {
+  const result = await api.clearEncounters();
+  notify(result.ok ? "已清除本账号的遇到记录" : result.error || "清除失败");
+}
+function viewNote(note: PlayerNote) {
+  openPlayer({ puuid: note.puuid, name: note.name, level: null });
+  emit("close");
+}
 onMounted(async () => {
+  void loadNotes();
   const result = await api.getDisplays();
   if (result.ok && result.data) displays.value = result.data;
 });
@@ -184,6 +208,58 @@ onMounted(async () => {
                 {{ display.name }}
               </option>
             </select>
+          </div>
+        </template>
+        <template v-if="section === 'players'">
+          <h3>玩家标记</h3>
+          <p class="settings-disclaimer">
+            标记与备注只保存在本机，不上传；“遇到过”只来自你自己的战绩记录。
+          </p>
+          <div v-for="note in notes" :key="note.puuid" class="setting-row">
+            <div>
+              <strong
+                >{{ note.name
+                }}<span v-if="note.tag" :class="['note-tag', note.tag]">{{
+                  playerTagNames[note.tag]
+                }}</span></strong
+              >
+              <p>
+                {{ note.note || "无备注" }} · {{ note.platform || "国服" }} ·
+                {{ date(note.updatedAt) }}
+              </p>
+            </div>
+            <div class="note-actions">
+              <button
+                class="text-button"
+                :aria-label="'查看标记玩家 ' + note.name"
+                @click="viewNote(note)"
+              >
+                查看
+              </button>
+              <button
+                class="icon-button"
+                :aria-label="'删除标记 ' + note.name"
+                @click="removeNote(note.puuid)"
+              >
+                <Trash2 :size="15" />
+              </button>
+            </div>
+          </div>
+          <p v-if="!notes.length" class="empty-inline">
+            还没有标记的玩家。在战绩页的玩家资料里可以添加。
+          </p>
+          <div class="setting-row">
+            <div>
+              <strong>清除遇到记录</strong>
+              <p>只清除当前账号与大区的“遇到过的玩家”记录，不影响标记。</p>
+            </div>
+            <button
+              class="button secondary"
+              :disabled="state.status !== 'connected'"
+              @click="clearEncounters"
+            >
+              清除
+            </button>
           </div>
         </template>
         <template v-if="section === 'data'">
