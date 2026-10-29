@@ -9,6 +9,7 @@ import {
   session,
 } from "electron";
 import { join, dirname } from "node:path";
+import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { Storage } from "./storage";
@@ -30,6 +31,7 @@ import {
   companionSizes,
   type CompanionSizes,
   type CompanionRole,
+  type WindowBounds,
 } from "./companions";
 import { clientWindowRect } from "./client-window";
 import { setPublicFetcher } from "./http";
@@ -136,7 +138,22 @@ else {
       const companions = new CompanionController();
       const readyCompanions = new Set<CompanionRole>();
       const userMoved = new Set<CompanionRole>();
-      let placementRequest = 0;
+      let lastClientRect: WindowBounds | null = null;
+      // 开发版记录小窗显示决策（仅阶段与可见性，无账号信息），便于排查“窗口未出现”。
+      const trace: string[] = [];
+      const traceFile = join(
+        app.getPath("userData"),
+        "local",
+        "companion-trace.log",
+      );
+      const note = (line: string) => {
+        if (app.isPackaged) return;
+        trace.push(`${new Date().toISOString()} ${line}`);
+        if (trace.length > 120) trace.splice(0, trace.length - 120);
+        void writeFile(traceFile, trace.join("\n") + "\n", "utf8").catch(
+          () => {},
+        );
+      };
       let companionSelectionRequest = 0;
       const catalog = new CatalogProvider(storage),
         tencent = new TencentProvider(storage, catalog),
@@ -488,10 +505,17 @@ else {
             })
             .catch(() => {});
         });
-        window.on("ready-to-show", () => {
+        // ready-to-show 之外以页面加载完成作为备用就绪信号。
+        const markReady = (source: string) => {
+          if (readyCompanions.has(role)) return;
           readyCompanions.add(role);
+          note(`${role} ready via ${source}`);
           updateCompanionWindows();
-        });
+        };
+        window.on("ready-to-show", () => markReady("ready-to-show"));
+        window.webContents.on("did-finish-load", () =>
+          setTimeout(() => markReady("did-finish-load"), 300),
+        );
         window.on("close", (event) => {
           if (quitting) return;
           event.preventDefault();
@@ -562,39 +586,48 @@ else {
       function companionWindow(role: CompanionRole) {
         return role === "picker" ? pickerWindow : infoWindow;
       }
-      /** 贴在客户端窗口旁边；找不到客户端窗口时放在主窗口所在屏幕右上角。 */
-      async function placeCompanions(roles: CompanionRole[]) {
-        const rect = await clientWindowRect();
-        // 按两个窗当前（可能被用户调整过的）尺寸排布。
-        const sizeOf = (role: CompanionRole) => {
-          const window = companionWindow(role);
-          if (!window || window.isDestroyed()) return companionSizes[role];
-          const { width, height } = window.getBounds();
-          return { width, height };
+      /** 两个小窗的尺寸取自用户保存的尺寸或默认值，不用测量值，避免缩放取整导致越调越大。 */
+      const companionSizesNow = (): CompanionSizes => {
+        const saved = storage.getSettings().companionSize ?? {};
+        return {
+          picker: saved.picker ?? companionSizes.picker,
+          info: saved.info ?? companionSizes.info,
         };
-        const sizes: CompanionSizes = {
-          picker: sizeOf("picker"),
-          info: sizeOf("info"),
-        };
-        let next;
+      };
+      /** 贴在客户端窗口旁边；不知道客户端位置时放在主窗口所在屏幕右上角。 */
+      function layoutCompanions(rect: WindowBounds | null) {
+        const sizes = companionSizesNow();
         if (rect) {
           const dip = screen.screenToDipRect(null, rect);
-          next = alignToClient(
+          return alignToClient(
             dip,
             screen.getDisplayMatching(dip).workArea,
             sizes,
           );
-        } else if (mainWindow && !mainWindow.isDestroyed())
-          next = companionBounds(
-            screen.getDisplayMatching(mainWindow.getBounds()).workArea,
-            sizes,
-          );
-        else return;
+        }
+        const anchor =
+          mainWindow && !mainWindow.isDestroyed()
+            ? mainWindow.getBounds()
+            : screen.getPrimaryDisplay().workArea;
+        return companionBounds(
+          screen.getDisplayMatching(anchor).workArea,
+          sizes,
+        );
+      }
+      function applyLayout(
+        roles: CompanionRole[],
+        next: ReturnType<typeof layoutCompanions>,
+      ) {
         for (const role of roles) {
           const window = companionWindow(role);
           if (window && !window.isDestroyed() && !userMoved.has(role))
             window.setBounds(next[role]);
         }
+      }
+      async function placeCompanions(roles: CompanionRole[]) {
+        const rect = await clientWindowRect();
+        if (rect) lastClientRect = rect;
+        applyLayout(roles, layoutCompanions(rect ?? lastClientRect));
       }
       function updateCompanionWindows() {
         const enabled = storage.getSettings().companionWindows !== false;
@@ -604,30 +637,30 @@ else {
           if (!window || window.isDestroyed()) continue;
           if (readyCompanions.has(role) && companions.visible(role, enabled)) {
             if (!window.isVisible()) appearing.push(role);
-          } else window.hide();
+          } else if (window.isVisible()) {
+            window.hide();
+            note(`${role} hide phase=${client.state.phase}`);
+          }
         }
         if (!appearing.length) return;
-        const request = ++placementRequest;
-        void placeCompanions(appearing)
-          .catch(() => {})
-          .finally(() => {
-            if (request !== placementRequest) return;
-            const allowed = storage.getSettings().companionWindows !== false;
-            for (const role of appearing) {
-              const window = companionWindow(role);
-              if (
-                window &&
-                !window.isDestroyed() &&
-                readyCompanions.has(role) &&
-                companions.visible(role, allowed) &&
-                !window.isVisible()
-              )
-                window.showInactive();
-            }
-          });
+        // 先按上次已知的客户端位置同步排好并立即显示，再异步读取最新位置微调；
+        // 显示不依赖任何异步结果，避免窗口因事件密集或读取失败而不出现。
+        try {
+          applyLayout(appearing, layoutCompanions(lastClientRect));
+        } catch (error) {
+          note(`layout failed ${(error as Error).message}`);
+        }
+        for (const role of appearing) companionWindow(role)?.showInactive();
+        note(
+          `show ${appearing.join("+")} phase=${client.state.phase} ready=${[...readyCompanions].join("+")}`,
+        );
+        void placeCompanions(appearing).catch((error) =>
+          note(`place failed ${(error as Error).message}`),
+        );
       }
       const repositionCompanions = () => {
         userMoved.clear();
+        lastClientRect = null;
         void placeCompanions(["picker", "info"]).catch(() => {});
       };
       screen.on("display-removed", repositionCompanions);
@@ -672,6 +705,22 @@ else {
         updateOverlay();
         updateCompanionWindows();
       });
+      // 仅隔离测试使用：环境变量开启时暴露窗口编排状态，可模拟阶段（不向客户端写入）。
+      if (process.env.ASSISTANT_TEST_HOOKS === "1")
+        Object.assign(globalThis, {
+          __assistantTest: {
+            companions: () => ({
+              trace: [...trace],
+              ready: [...readyCompanions],
+              moved: [...userMoved],
+              visible: (["picker", "info"] as const).map((role) =>
+                companions.visible(role, true),
+              ),
+            }),
+            emitState: (patch: Partial<typeof client.state>) =>
+              client.emit("state", { ...client.state, ...patch }),
+          },
+        });
       recognition.on("recognition", (state) => {
         broadcast("assistant:recognition", state);
         updateOverlay();

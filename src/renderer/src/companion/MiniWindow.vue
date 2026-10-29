@@ -170,14 +170,9 @@ async function choose(id: number) {
   error.value = "";
   message.value = "";
   const context = sessionContext();
-  const kind = choices.value.kind;
   try {
     await unwrap(api.chooseChampion(id));
     if (context !== sessionContext()) return;
-    message.value =
-      kind === "subset"
-        ? `已选用 ${heroes.value.get(id)?.name || id} · 以客户端结果为准`
-        : `已换用 ${heroes.value.get(id)?.name || id} · 以客户端结果为准`;
     await view(null);
     await refreshChoices();
   } catch (e) {
@@ -261,11 +256,6 @@ onUnmounted(() => {
         </div>
         <div class="mini-choices-head">
           <span>{{ heading }}</span>
-          <small v-if="shown.length">{{
-            choices.kind === "pick"
-              ? "点击头像直接预选 · 不锁定"
-              : "点击头像直接换用 · 右键只查看"
-          }}</small>
         </div>
         <div v-if="choices.kind === 'pick'" class="mini-search">
           <Search :size="13" /><input

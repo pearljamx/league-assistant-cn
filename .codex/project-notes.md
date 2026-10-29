@@ -99,3 +99,5 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 小窗 resizable + min/max；“resized”后把尺寸写入 settings.companionSize（validateSettings 限 280–1200×300–1400，渲染层 settings-save 的 strict schema 不接受该字段）。贴靠改为两窗同侧：并排放不下时上下叠放（Mini 上、推荐窗下），整体上移以完整显示；按窗当前尺寸计算。2048×1232 工作区、居中客户端时两窗叠放在右侧 x=1672。
 - 英雄推荐窗（原英雄信息窗）：海克斯模式默认“海克斯”标签，前 10 个强化 + shared/augment-grade.ts 评级（非低样本按平滑胜率排名，位次 ≤10% S、≤30% A、≤60% B、≤85% C，其余 D，可定级少于 3 个时不定级）；无英雄时对比卡片英雄胜率与前 3 个可定级强化。
 - 本轮真实客户端未复测：用户的 npm run dev（electron pid 30476）在运行，桌面冒烟会被单实例锁拦下。
+- 2026-10-29 用户反馈“推荐窗未出现”，并要求去掉“点击头像直接换用 · 右键只查看”和“已选用 X · 以客户端结果为准”两句提示（已删）。只读枚举用户 dev 实例窗口：推荐窗仍是启动时矩形，说明选人阶段从未进入显示流程；隔离实例（--user-data-dir、ASSISTANT_TEST_HOOKS=1 模拟阶段，构建版与 dev 页面均试）无法复现。改为：updateCompanionWindows 先用上次已知客户端位置同步排布并立即 showInactive，再异步读取客户端位置微调，显示不再依赖异步结果；did-finish-load 作为备用就绪信号；尺寸取保存值/默认值（测量值在 125% 缩放下取整会越排越大）。开发版在 local/companion-trace.log 记录最近 120 条显示决策（只有阶段与可见性）。
+- 真实选人阶段的推荐窗仍需用户复测；若仍不出现，请用户发送 %APPDATA%\英雄联盟助手\local\companion-trace.log。
