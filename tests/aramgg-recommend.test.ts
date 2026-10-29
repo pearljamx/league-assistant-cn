@@ -88,3 +88,65 @@ it("极地大乱斗出装来自 aramgg 第一套流派，鞋子单列，标明�
   expect(rec.unavailable[0]).toContain("符文");
   expect(recommendationFromAramgg({ builds: [] } as any)).toBeNull();
 });
+
+it("符文按基石定主系、副系取两行最常选，缺格时不拼", async () => {
+  const { runePageFromStats } = await import(
+    "../src/main/providers/aramgg-recommend"
+  );
+  const styles = [
+    {
+      id: 8000,
+      slots: [
+        [8005, 8008],
+        [9101, 9111],
+        [9104, 9103],
+        [8014, 8017],
+      ],
+    },
+    { id: 8100, slots: [[8112], [8126, 8139], [8136, 8120], [8135, 8105]] },
+    { id: 8200, slots: [[8214], [8224, 8226], [8210, 8234], [8237, 8236]] },
+  ];
+  const r = (id: number, pickRate: number) => ({
+    id,
+    tree: null,
+    games: 10,
+    pickRate,
+    winRate: 0.5,
+  });
+  const stats = {
+    games: 1000,
+    keystones: [r(8005, 0.2), r(8008, 0.7)],
+    runes: [
+      r(9111, 0.8),
+      r(9103, 0.6),
+      r(8014, 0.9),
+      r(8139, 0.5),
+      r(8135, 0.4),
+      r(8226, 0.3),
+      r(8236, 0.1),
+    ],
+    shards: {
+      offense: [r(5005, 0.6)],
+      flex: [r(5008, 0.9)],
+      defense: [r(5001, 0.7), r(5011, 0.2)],
+    },
+  };
+  const page = runePageFromStats(stats, styles)!;
+  expect(page).toMatchObject({
+    primaryStyleId: 8000,
+    subStyleId: 8100,
+    winRate: null,
+    pickRate: 0.7,
+    games: 1000,
+  });
+  expect(page.perks).toEqual([
+    8008, 9111, 9103, 8014, 8139, 8135, 5005, 5008, 5001,
+  ]);
+  expect(
+    runePageFromStats(
+      { ...stats, shards: { ...stats.shards, flex: [] } },
+      styles,
+    ),
+  ).toBeNull();
+  expect(runePageFromStats(null, styles)).toBeNull();
+});

@@ -265,6 +265,26 @@ export interface AramggBuild {
   situational: AramggOption[];
   spells: AramggOption[];
   skills: { keys: string[]; games: number | null; winRate: number | null }[];
+  /** 完整出装：核心三件 + 该核心之后最常见的补装（最多 6 件）。 */
+  full?: AramggOption[];
+}
+/** 单个符文/碎片在该英雄极地大乱斗对局中的选取统计（不是整页统计）。 */
+export interface AramggRuneStat {
+  id: number;
+  tree: number | null;
+  games: number | null;
+  pickRate: number | null;
+  winRate: number | null;
+}
+export interface AramggRuneStats {
+  games: number | null;
+  keystones: AramggRuneStat[];
+  runes: AramggRuneStat[];
+  shards: {
+    offense: AramggRuneStat[];
+    flex: AramggRuneStat[];
+    defense: AramggRuneStat[];
+  };
 }
 export interface AramggChampion {
   source: AramggSource;
@@ -275,6 +295,8 @@ export interface AramggChampion {
   augments: AramggAugment[];
   trios: AramggOption[];
   builds: AramggBuild[];
+  /** 极地大乱斗（队列 450）符文单项统计；旧数据包或额度不足时为空。 */
+  runeStats?: AramggRuneStats | null;
 }
 export interface AramggStatus {
   configured: boolean;

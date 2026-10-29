@@ -47,6 +47,33 @@ const detail = (id: number) => ({
   },
 });
 
+/** 原始出装文件：只含符文统计所需的列。 */
+const rawBuilds = () => ({
+  data: {
+    manifest: {
+      schema: {
+        columns: ["queue_id", "games", "runes", "shards", "keystone"].map(
+          (name) => ({ name }),
+        ),
+      },
+    },
+    result: {
+      dataArray: [
+        [
+          "450",
+          "900",
+          JSON.stringify([{ runeId: 9111, treeId: 8000, pick_rate: 0.8 }]),
+          JSON.stringify({
+            offenseShard: [{ shard_id: "5005", pick_rate: 0.9 }],
+            flexShard: [{ shard_id: "5008", pick_rate: 0.9 }],
+            defenseShard: [{ shard_id: "5001", pick_rate: 0.9 }],
+          }),
+          JSON.stringify([{ keystone_id: 8008, treeId: 8000, pick_rate: 0.7 }]),
+        ],
+      ],
+    },
+  },
+});
 /** 模拟 aramgg：按额度扣费并在响应头返回剩余额度。 */
 function aramgg(options: { version: () => string; credits: { left: number } }) {
   const paid: string[] = [];
@@ -66,6 +93,7 @@ function aramgg(options: { version: () => string; credits: { left: number } }) {
       return json({ data: [{ id: 1 }, { id: 2 }, { id: 3 }] }, headers);
     if (path === "/augments.json")
       return json({ data: [detail(1).data.augments[0]] }, headers);
+    if (path.startsWith("/data/builds/")) return json(rawBuilds(), headers);
     const id = Number(path.match(/\/champions\/(\d+)\.json/)![1]);
     return json(detail(id), headers);
   }) as typeof fetch;
@@ -89,6 +117,7 @@ it("未同步的英雄优先，其次是旧版本中最早抓取的英雄", () =
     bytes: 1,
     dataVersion,
     fetchedAt,
+    content: 2,
   });
   const previous = {
     champions: {
@@ -102,7 +131,7 @@ it("未同步的英雄优先，其次是旧版本中最早抓取的英雄", () =
 
 it("额度不足时轮转同步，次日补齐；版本未变且已全量时不再消耗额度", async () => {
   const storage = memoryFiles();
-  const credits = { left: 6 };
+  const credits = { left: 8 };
   const remote = aramgg({ version: () => "16.21.3", credits });
   const deps = {
     key: "test-key",
@@ -113,7 +142,7 @@ it("额度不足时轮转同步，次日补齐；版本未变且已全量时不�
     intervalMs: 0,
   };
   const first = await runSync(deps);
-  // 6 额度：英雄列表 1 + 强化 1 + 两个英雄各 2。
+  // 8 额度：英雄列表 1 + 强化 1 + 两个英雄各 3（详情 2 + 符文 1）。
   expect(first).toMatchObject({
     synced: [1, 2],
     pending: 1,
@@ -156,13 +185,14 @@ it("新数据版本发布后重新拉取列表和全部英雄，429 时保留已
   };
   await runSync(deps);
   version = "16.21.4";
-  credits.left = 4;
+  credits.left = 5;
   remote.paid.length = 0;
   const result = await runSync({ ...deps, dailyBudget: 999 });
   expect(remote.paid).toEqual([
     "/champions.json",
     "/augments.json",
     "/champions/1.json",
+    "/data/builds/HOWLING_ABYSS_ARAM/1.json",
   ]);
   expect(result).toMatchObject({ stopped: "budget", synced: [1], pending: 2 });
   const manifest = parseManifest(
@@ -196,6 +226,7 @@ it("多个 Key 按顺序使用：第一个额度用完或失效后换下一个�
       return json({ data: [{ id: 1 }, { id: 2 }, { id: 3 }] }, headers);
     if (path === "/augments.json")
       return json({ data: [detail(1).data.augments[0]] }, headers);
+    if (path.startsWith("/data/builds/")) return json(rawBuilds(), headers);
     return json(detail(Number(path.match(/(\d+)\.json/)![1])), headers);
   }) as typeof fetch;
   const logs: string[] = [];
@@ -209,15 +240,18 @@ it("多个 Key 按顺序使用：第一个额度用完或失效后换下一个�
   });
   expect(result).toMatchObject({ stopped: "complete", keys: 3, pending: 0 });
   expect(result.synced).toEqual([1, 2, 3]);
-  // key-a 剩 5：列表 1 + 强化 1 + 英雄 2 后只剩 1，不够下一个英雄，自动换 key-b。
+  // key-a 剩 5：列表 1 + 强化 1 + 英雄 1 的详情 2 与符文 1 后用完，自动换 key-b。
   expect(used).toEqual([
     "key-a/champions.json",
     "key-a/augments.json",
     "key-a/champions/1.json",
+    "key-a/data/builds/HOWLING_ABYSS_ARAM/1.json",
     "key-b/champions/2.json",
+    "key-b/data/builds/HOWLING_ABYSS_ARAM/2.json",
     "key-b/champions/3.json",
+    "key-b/data/builds/HOWLING_ABYSS_ARAM/3.json",
   ]);
-  expect(result.creditsRemaining).toBe(1 + 196);
+  expect(result.creditsRemaining).toBe(0 + 194);
   expect(logs.join(" ")).toContain("第 1 个 Key 无效");
   expect(logs.join(" ")).not.toContain("key-");
 });
@@ -312,6 +346,12 @@ it("先读国内镜像，镜像失败或校验不符时换 GitHub，并按摘要
   ]);
   mirrorTampered = true;
   const hero = await provider.champion(1);
+  // 数据包保留极地大乱斗符文单项统计，供拼出符文页。
+  expect(hero.runeStats).toMatchObject({
+    games: 900,
+    keystones: [{ id: 8008, pickRate: 0.7 }],
+    shards: { offense: [{ id: 5005 }] },
+  });
   expect(hero.source).toMatchObject({
     via: "public",
     dataVersion: "16.21.3",

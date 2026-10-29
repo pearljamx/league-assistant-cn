@@ -1,10 +1,16 @@
 import { createHash } from "node:crypto";
 import { AppError } from "../errors";
-import { normalizeAugment, normalizeChampion } from "./aramgg";
+import {
+  normalizeAugment,
+  normalizeChampion,
+  normalizeRuneStats,
+} from "./aramgg";
 import type {
   AramggBuild,
   AramggChampion,
   AramggOption,
+  AramggRuneStat,
+  AramggRuneStats,
 } from "../../shared/types";
 
 // PEARLJAM HEX 公共数据包：由仓库定时任务用维护者的 aramgg Key 同步，客户端无需 Key。
@@ -28,7 +34,10 @@ export interface SnapshotFile {
   bytes: number;
   dataVersion: string;
   fetchedAt: string;
+  /** 文件内容格式版本；低于 CHAMPION_CONTENT 的文件会重新同步（补完整出装与符文）。 */
+  content?: number;
 }
+export const CHAMPION_CONTENT = 2;
 export interface SnapshotManifest {
   schema: typeof SNAPSHOT_SCHEMA;
   source: string;
@@ -67,6 +76,9 @@ function snapshotFile(raw: any, file: string): SnapshotFile | null {
     bytes: raw.bytes,
     dataVersion: raw.dataVersion,
     fetchedAt: raw.fetchedAt,
+    ...(Number.isInteger(raw.content) && raw.content > 0 && raw.content < 100
+      ? { content: raw.content }
+      : {}),
   };
 }
 /** 校验清单：文件名只能是固定格式，任何异常项都丢弃，不信任远端路径。 */
@@ -117,6 +129,36 @@ function cleanOption(raw: any): AramggOption {
     pickRate: rate(raw?.pickRate),
   };
 }
+function cleanRuneStat(raw: any): AramggRuneStat | null {
+  const id = Number(raw?.id);
+  if (!Number.isInteger(id) || id <= 0 || id >= 100000) return null;
+  const tree = Number(raw?.tree);
+  return {
+    id,
+    tree: Number.isInteger(tree) && tree > 0 ? tree : null,
+    games: whole(raw?.games),
+    pickRate: rate(raw?.pickRate),
+    winRate: rate(raw?.winRate),
+  };
+}
+function cleanRuneStats(raw: any): AramggRuneStats | null {
+  if (!raw || typeof raw !== "object") return null;
+  const many = (value: unknown, limit: number) =>
+    arr(value, limit)
+      .map(cleanRuneStat)
+      .filter((item): item is AramggRuneStat => Boolean(item));
+  const value: AramggRuneStats = {
+    games: whole(raw.games),
+    keystones: many(raw.keystones, 20),
+    runes: many(raw.runes, 400),
+    shards: {
+      offense: many(raw.shards?.offense, 10),
+      flex: many(raw.shards?.flex, 10),
+      defense: many(raw.shards?.defense, 10),
+    },
+  };
+  return value.keystones.length && value.runes.length ? value : null;
+}
 function cleanBuild(raw: any): AramggBuild {
   return {
     tags: label(raw?.tags, 48),
@@ -127,6 +169,7 @@ function cleanBuild(raw: any): AramggBuild {
     starting: arr(raw?.starting, 3).map(cleanOption),
     situational: arr(raw?.situational, 12).map(cleanOption),
     spells: arr(raw?.spells, 3).map(cleanOption),
+    full: arr(raw?.full, 3).map(cleanOption),
     skills: arr(raw?.skills, 3).map((item) => ({
       keys: arr(item?.keys, 18).filter((key) =>
         ["Q", "W", "E", "R"].includes(key),
@@ -168,6 +211,7 @@ export function parseSnapshotChampion(
     ...normalized,
     trios: arr(raw.trios, 5).map(cleanOption),
     builds: arr(raw.builds, 4).map(cleanBuild),
+    runeStats: cleanRuneStats(raw.runeStats),
     dataVersion,
     gamePatch: version(raw.gamePatch),
     fetchedAt,
@@ -203,7 +247,11 @@ export function planChampions(
 ) {
   const entries = previous?.champions ?? {};
   return championIds
-    .filter((id) => entries[id]?.dataVersion !== dataVersion)
+    .filter(
+      (id) =>
+        entries[id]?.dataVersion !== dataVersion ||
+        (entries[id]?.content ?? 1) < CHAMPION_CONTENT,
+    )
     .sort((a, b) => {
       const left = entries[a],
         right = entries[b];
@@ -409,13 +457,28 @@ export async function runSync(deps: SyncDeps): Promise<SyncResult> {
         deps.log(`英雄 ${id} 数据不完整，跳过`);
         continue;
       }
+      // 符文只在原始出装文件里（1 额度）；额度不足时先发布不含符文的文件，下一轮再补。
+      const raw = await paid(
+        `/data/builds/HOWLING_ABYSS_ARAM/${id}.json`,
+        1,
+      ).catch((error) => {
+        if (error instanceof Quota) throw error;
+        deps.log(`英雄 ${id} 符文数据读取失败，先不含符文发布`);
+        return null;
+      });
+      const runeStats = raw ? normalizeRuneStats(raw) : null;
       const value: SnapshotChampion = {
         ...normalized,
+        runeStats,
         dataVersion,
         gamePatch,
         fetchedAt: now().toISOString(),
       };
-      manifest.champions[id] = await store(`champions/${id}.json`, value);
+      manifest.champions[id] = {
+        ...(await store(`champions/${id}.json`, value)),
+        // 没拿到符文时保持旧格式版本，下一轮继续补。
+        content: runeStats ? CHAMPION_CONTENT : 1,
+      };
       synced.push(id);
     }
   } catch (error) {

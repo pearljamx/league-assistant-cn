@@ -703,3 +703,10 @@ body:has(.companion-shell) {
 .info-note.warn {
   color: #e0a3a6;
 }
+.compact-rune-head strong small {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+}

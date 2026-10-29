@@ -35,7 +35,10 @@ import {
 } from "./companions";
 import { clientWindowRect, resizeClientWindow } from "./client-window";
 import { Toolkit } from "./toolkit";
-import { recommendationFromAramgg } from "./providers/aramgg-recommend";
+import {
+  recommendationFromAramgg,
+  runePageFromStats,
+} from "./providers/aramgg-recommend";
 import { setPublicFetcher } from "./http";
 import { createTray } from "./tray";
 import { PlayerStore, playerTags } from "./players";
@@ -376,13 +379,28 @@ else {
           stats = query.parse(value);
         // 极地大乱斗：腾讯 101 没有出装统计，默认用 aramgg（队列 450 全球统计，公共数据包免 Key）。
         if (stats.mode === "aram") {
+          await catalog.get().catch(() => null);
           const fromAramgg = await aramgg
             .champion(id)
-            .then(recommendationFromAramgg)
+            .then((data) => recommendationFromAramgg(data, catalog.styles))
             .catch(() => null);
           if (fromAramgg) return fromAramgg;
         }
-        return tencent.recommendation(id, stats);
+        const result = await tencent.recommendation(id, stats);
+        // 海克斯模式腾讯没有符文时，补上 aramgg 的极地大乱斗符文并在方案名里标明来源。
+        if (stats.mode === "hex" && !result.runes.length) {
+          await catalog.get().catch(() => null);
+          const page = await aramgg
+            .champion(id)
+            .then((data) => runePageFromStats(data.runeStats, catalog.styles))
+            .catch(() => null);
+          if (page)
+            return {
+              ...result,
+              runes: [{ ...page, label: "aramgg 极地大乱斗 · 单项最常选组合" }],
+            };
+        }
+        return result;
       });
       handle("augments", (championId, value) =>
         aramhex.augments(

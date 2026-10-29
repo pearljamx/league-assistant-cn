@@ -7,6 +7,8 @@ import type {
   AramggBuild,
   AramggChampion,
   AramggOption,
+  AramggRuneStat,
+  AramggRuneStats,
   AramggStatus,
 } from "../../shared/types";
 
@@ -61,6 +63,91 @@ function option(raw: any): AramggOption {
     pickRate: ratio(raw?.pickRate ?? raw?.stats?.pickRate),
   };
 }
+/** 每个核心三件取补装最深的一步，拼成完整出装。 */
+function fullBuilds(raw: any): AramggOption[] {
+  const deepest = new Map<string, any>();
+  for (const step of list(raw?.itemExtensions, 60)) {
+    const core = ids(step?.coreItemIds);
+    if (core.length !== 3) continue;
+    const key = core.join(":");
+    if (!deepest.has(key) || Number(step?.step) > Number(deepest.get(key).step))
+      deepest.set(key, { ...step, core });
+  }
+  return list(raw?.coreItems, 3).flatMap((coreRow) => {
+    const core = ids(coreRow?.itemIds);
+    const step = deepest.get(core.join(":"));
+    if (!step) return [];
+    return [
+      {
+        ids: [...new Set([...core, ...ids(step.itemIds)])].slice(0, 6),
+        names: [],
+        games: count(step.games),
+        winRate: ratio(step.winRate),
+        pickRate: null,
+      },
+    ];
+  });
+}
+/** 原始出装文件（/data/builds/HOWLING_ABYSS_ARAM/{id}.json）中场次最多一套的符文单项统计。 */
+export function normalizeRuneStats(json: any): AramggRuneStats | null {
+  const result = json?.data?.result ?? json?.result;
+  const rows = list(result?.dataArray, 20);
+  const columns: string[] = list(
+    (json?.data?.manifest ?? json?.manifest)?.schema?.columns,
+    80,
+  ).map((column: any) => String(column?.name ?? ""));
+  const at = (name: string, fallback: number) => {
+    const index = columns.indexOf(name);
+    return index >= 0 ? index : fallback;
+  };
+  const games = at("games", 12),
+    runes = at("runes", 17),
+    shards = at("shards", 18),
+    keystone = at("keystone", 22),
+    queue = at("queue_id", 2);
+  const best = rows
+    .filter((row) => Array.isArray(row) && String(row[queue]) === "450")
+    .sort((a, b) => Number(b[games]) - Number(a[games]))[0];
+  if (!best) return null;
+  const parse = (value: unknown) => {
+    try {
+      return typeof value === "string" ? JSON.parse(value) : value;
+    } catch {
+      return null;
+    }
+  };
+  const stat = (item: any, idKey: string) => {
+    const id = Number(item?.[idKey]);
+    return Number.isInteger(id) && id > 0 && id < 100000
+      ? {
+          id,
+          tree:
+            Number.isInteger(Number(item?.treeId)) && Number(item?.treeId) > 0
+              ? Number(item.treeId)
+              : null,
+          games: count(item?.games),
+          pickRate: ratio(item?.pick_rate),
+          winRate: ratio(item?.win_rate),
+        }
+      : null;
+  };
+  const many = (value: unknown, idKey: string, limit: number) =>
+    list(parse(value), limit)
+      .map((item) => stat(item, idKey))
+      .filter((item): item is AramggRuneStat => Boolean(item));
+  const shard = parse(best[shards]) ?? {};
+  const value: AramggRuneStats = {
+    games: count(Number(best[games])),
+    keystones: many(best[keystone], "keystone_id", 20),
+    runes: many(best[runes], "runeId", 400),
+    shards: {
+      offense: many(shard.offenseShard, "shard_id", 10),
+      flex: many(shard.flexShard, "shard_id", 10),
+      defense: many(shard.defenseShard, "shard_id", 10),
+    },
+  };
+  return value.keystones.length && value.runes.length ? value : null;
+}
 function build(raw: any): AramggBuild {
   const tags =
     raw?.tags && typeof raw.tags === "object"
@@ -79,6 +166,7 @@ function build(raw: any): AramggBuild {
       option({ ...item, itemIds: [item?.id], items: [item] }),
     ),
     spells: list(raw?.summonerSpells, 3).map(option),
+    full: fullBuilds(raw),
     skills: list(raw?.skillOrders, 3).map((item) => ({
       keys: list(item?.skillKeys, 18).filter((key) =>
         ["Q", "W", "E", "R"].includes(key),

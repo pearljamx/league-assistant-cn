@@ -452,14 +452,21 @@ onUnmounted(() => {
               aramgg 流派 · {{ aramggBuild.tags || "推荐" }}
               <small>极地大乱斗全球统计，仅供参考</small>
             </h3>
-            <div v-if="aramggBuild.core[0]" class="info-items">
+            <div
+              v-for="(row, index) in (aramggBuild.full?.length
+                ? aramggBuild.full
+                : aramggBuild.core
+              ).slice(0, 2)"
+              :key="index"
+              class="info-items"
+            >
               <img
-                v-for="id in aramggBuild.core[0].ids"
+                v-for="id in row.ids"
                 :key="id"
                 :src="catalog.items[id]?.icon"
                 :title="catalog.items[id]?.name"
                 alt=""
-              /><span>{{ percent(aramggBuild.core[0].winRate) }}</span>
+              /><span>{{ percent(row.winRate) }}</span>
             </div>
             <p v-if="aramggBuild.spells[0]" class="compact-label">
               召唤师技能：{{ aramggBuild.spells[0].names.join(" + ") }}
@@ -519,10 +526,18 @@ onUnmounted(() => {
             class="compact-rune"
           >
             <div class="compact-rune-head">
-              <strong>{{
-                catalog.perks[rune.perks[0]]?.name || rune.label
-              }}</strong
-              ><span>{{ percent(rune.winRate) }}</span>
+              <strong
+                >{{ catalog.perks[rune.perks[0]]?.name || rune.label
+                }}<small v-if="rune.label.startsWith('aramgg')">{{
+                  rune.label
+                }}</small></strong
+              ><span>{{
+                rune.winRate !== null
+                  ? percent(rune.winRate)
+                  : rune.pickRate !== null
+                    ? "基石选取 " + percent(rune.pickRate)
+                    : "—"
+              }}</span>
             </div>
             <div class="compact-perks">
               <span
