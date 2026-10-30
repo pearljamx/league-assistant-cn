@@ -2,6 +2,21 @@
 
 更新时间：2026-10-29（北京时间）。只记录实际结果，不将接口存在视为实测通过。
 
+## v0.3.0 新增验证
+
+[v0.3.0 公开预发布](https://github.com/pearljamx/league-assistant-cn/releases/tag/v0.3.0)已上线，Release ID 428939062，标签 84975d2。三附件服务端摘要与本地一致，公开校验文件实际下载一致，两个 EXE 公开 HEAD 200；未完整下载两个 EXE 重跑。
+
+- GitHub Windows 检查 [41045158378](https://github.com/pearljamx/league-assistant-cn/actions/runs/41045158378) 全流程通过，代码输入 84975d2。附件在本地构建自 615f67b，与 84975d2 的差异仅为 scripts/smoke-portable.mjs（不进安装包）。
+- 本地：类型检查、Vitest 149 项；`test:renderer`、`test:companions`、`test:history`、`test:live` 均 0 错误；全部为隔离合成服务，无真实客户端写入。
+- 便携版启动通过：OCR 就绪、2 个显示器；当时客户端未运行，状态为 disconnected，本轮**未**验证真实国服连接。便携版首次启动解压约 39 秒。
+- 安装/卸载烟测：检测到已有正式安装后主动拒绝覆盖，本轮未执行，不能将旧版安装验证当作本轮已重跑。
+- 实时对局新版面只用合成十人数据验证，未进入真实对局。自动选择/禁用/锁定、抢备选席、工具集写接口、换英雄、符文写入与多屏 OCR 仍待实战验收。
+
+```text
+226c21dc1dfa404ea74376c6c59f9324cc0ef7c0f1cae52c85848a762ce4b362  PearljamHex-0.3.0-x64-Portable.exe
+7fd3c504612e2dd7d72f03cda3a05566e9a00c380573fccf3eab08a1d99570b0  PearljamHex-0.3.0-x64-Setup.exe
+```
+
 ## v0.2.0 新增验证
 
 [v0.2.0 公开预发布](https://github.com/pearljamx/league-assistant-cn/releases/tag/v0.2.0)已上线，Release ID427438841；最终标签e1fb30c。三附件服务端摘要均与本地一致，公开校验文件实际下载一致，程序链接HEAD200，源码ZIP110文件核对通过。没有将服务端摘要及HEAD描述为完整下载两个EXE再运行。
