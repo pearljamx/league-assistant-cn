@@ -23,7 +23,8 @@ const child = spawn(
 let browser;
 try {
   let ready = false;
-  for (let attempt = 0; attempt < 60; attempt++) {
+  // 便携包首次启动要先解压（约 180 MB，实测 39 秒），这里最多等 2 分钟。
+  for (let attempt = 0; attempt < 240; attempt++) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/version`);
       if (response.ok) {
