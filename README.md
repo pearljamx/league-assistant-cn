@@ -70,6 +70,7 @@ npm run build
 npm run test:renderer
 npm run test:companions
 npm run test:history
+npm run test:live
 npm run verify:live
 npm run verify:statistics
 npm run test:desktop
@@ -81,7 +82,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-installer.ps1
 
 `test:renderer` 使用独立账户目录和明确标记的模拟数据，验证手动比较保持、识别切换、过期响应及符文参数传递；它不加载真实客户端服务，不进行游戏写入。
 
-`test:companions` 验证双窗同步、阶段提示、换用参数和评分状态；`test:history` 验证战绩、实时成员及玩家跳转。两者同样使用隔离模拟服务，不操作真实客户端。
+`test:companions` 验证双窗同步、阶段提示、换用参数和评分状态；`test:history` 验证战绩、实时成员及玩家跳转；`test:live` 验证十人实时版面。三者同样使用隔离模拟服务，不操作真实客户端。
 
 安装器测试只在没有同名正式安装和快捷方式时执行，使用项目内测试目录，验证后卸载并核对用户配置保持不变。
 

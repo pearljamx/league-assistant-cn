@@ -453,28 +453,38 @@ button.title-tab.active svg {
   border-bottom-color: var(--gold);
 }
 
-/* 实时对局：我方 / 敌方两列玩家卡片。 */
+/* 实时对局：参考 LeagueAkari，两队上下排列，每队一行玩家卡片，卡片内战绩独立滚动。 */
 .hw-kicker {
   font-size: 9px;
   letter-spacing: 2px;
   color: var(--gold);
   font-weight: 600;
 }
+.live-view {
+  height: 100%;
+  min-height: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .live-heading {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-bottom: 14px;
 }
 .live-heading h2 {
-  font-size: 19px;
-  margin-top: 2px;
+  font-size: 16px;
 }
 .live-heading h2 small {
   font-size: 12px;
   font-weight: 400;
   color: var(--muted);
   margin-left: 10px;
+}
+.live-heading h2 small i {
+  margin: 0 5px;
+  font-style: normal;
 }
 .live-message {
   margin-left: auto;
@@ -491,96 +501,239 @@ button.title-tab.active svg {
   color: var(--muted);
 }
 .live-teams {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .live-team {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.live-team.ally {
-  border-top: 2px solid #6fa3c0;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  --team-color: #6fa3c0;
 }
 .live-team.enemy {
-  border-top: 2px solid #c07878;
+  --team-color: #c07878;
 }
 .live-team-heading {
+  flex: none;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+.live-team-dot {
+  align-self: center;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--team-color);
 }
 .live-team-heading h3 {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
 }
-.live-team-heading small,
-.live-team-heading > span {
+.live-team-heading small {
   font-size: 10px;
   color: var(--muted);
-  font-weight: 400;
+}
+.live-team-heading b {
   margin-left: 6px;
+  font-size: 13px;
+  font-family: "Bahnschrift", "Microsoft YaHei UI", sans-serif;
+}
+.live-team-heading > span {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+}
+.live-view .good {
+  color: #7fb8e6;
+}
+.live-view .bad {
+  color: #e29a9e;
+}
+/* 至多 5 列；窗口放不下 5 张最小卡片时自动换行。 */
+.live-cards {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(208px, calc((100% - 24px) / 5)), 1fr)
+  );
+  grid-auto-rows: minmax(250px, 1fr);
+  gap: 6px;
 }
 .live-card {
+  --premade-color: transparent;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.live-card.self {
+  background: #182428;
+}
+.live-card.premade-1 {
+  --premade-color: #48e5db;
+}
+.live-card.premade-2 {
+  --premade-color: #f07ab8;
+}
+.live-card.premade-3 {
+  --premade-color: #d4de17;
+}
+.live-card.premade-4 {
+  --premade-color: #ff9f1c;
+}
+.live-card[class*="premade-"] {
+  border-color: var(--premade-color);
+}
+/* 预组队角标 */
+.live-card[class*="premade-"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  background: var(--premade-color);
+  transform: translate(50%, -50%) rotate(45deg);
+}
+.live-card[class*="premade-"] .live-name {
+  color: var(--premade-color);
+}
+.live-card-head {
+  flex: none;
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: 9px;
   text-align: left;
-  border-bottom: 1px solid var(--line);
 }
-.live-card:last-child {
-  border-bottom: 0;
+.live-card-head:hover:not(:disabled) {
+  filter: brightness(1.2);
 }
-.live-card:hover:not(:disabled) {
-  background: #ffffff06;
-}
-.live-card:disabled {
+.live-card-head:disabled {
   cursor: default;
   opacity: 0.75;
+}
+.live-avatar {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+.live-avatar .champion-icon {
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px #ffffff4f;
+}
+.live-avatar em {
+  position: absolute;
+  right: -5px;
+  bottom: -1px;
+  padding: 0 3px;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 14px;
+  color: #fff;
+  background: #000000a6;
+  border-radius: 3px;
 }
 .live-card-identity {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  line-height: 1.4;
+  gap: 3px;
+  line-height: 1.3;
 }
-.live-card-identity b {
-  font-weight: 500;
+.live-card-identity > b {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.live-name {
+  overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.live-card-identity > b > small {
+  flex: none;
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.live-rank {
+  font-size: 11px;
+  color: var(--secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.live-card-sub {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--secondary);
+  white-space: nowrap;
+}
+.live-card-sub > span:first-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.live-card-identity > span {
-  font-size: 11px;
+.live-card-sub i {
+  font-style: normal;
   color: var(--muted);
 }
-.live-card-identity i {
-  margin: 0 0 0 5px;
+.live-hero-rate {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
 }
-.live-card-stat {
+.live-stats {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  padding: 4px 0;
+  border-block: 1px solid var(--line);
+}
+.live-stats > span {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  min-width: 62px;
-  line-height: 1.35;
+  align-items: center;
+  line-height: 1.3;
 }
-.live-card-stat b {
+.live-stats b {
+  font-size: 13px;
+  font-weight: 600;
   font-family: "Bahnschrift", "Microsoft YaHei UI", sans-serif;
-  font-weight: 500;
 }
-.live-card-stat small {
+.live-stats small {
   font-size: 9px;
   color: var(--muted);
   white-space: nowrap;
 }
 .live-card-items {
+  flex: none;
   display: flex;
   gap: 2px;
 }
@@ -588,6 +741,120 @@ button.title-tab.active svg {
   width: 20px;
   height: 20px;
   border-radius: 3px;
+}
+.live-card > .live-tags {
+  flex: none;
+  margin-top: 0;
+}
+.live-usage {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+.live-usage > span {
+  display: flex;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px currentColor;
+}
+.live-matches {
+  flex: 1 1 0;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.live-match {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  border-radius: 3px;
+}
+.live-match.win {
+  background: #5b9fd624;
+}
+.live-match.loss {
+  background: #d6787d24;
+}
+.live-match .champion-icon {
+  flex: none;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.live-match-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.live-match-info b {
+  font-size: 11px;
+  font-weight: 400;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.live-match-info small {
+  font-size: 10px;
+  color: var(--secondary);
+  white-space: nowrap;
+}
+.live-match-info i {
+  margin-left: 3px;
+  font-style: normal;
+}
+.live-match.win i {
+  color: #7fb8e6;
+}
+.live-match.loss i {
+  color: #e29a9e;
+}
+.live-match-kda {
+  flex: none;
+  font-size: 11px;
+  font-family: "Bahnschrift", "Microsoft YaHei UI", sans-serif;
+}
+.live-matches-empty {
+  margin: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.live-bench {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.live-bench h3 {
+  margin-right: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.live-bench-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 2px;
+  font-size: 11px;
+  color: var(--green);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.live-bench-item:hover {
+  border-color: #c4ad704d;
+}
+.live-bench-hint {
+  margin-left: auto;
 }
 .self-tag {
   font-size: 9px;
@@ -802,9 +1069,6 @@ button.title-tab.active svg {
   }
   .title-search span {
     display: none;
-  }
-  .live-teams {
-    grid-template-columns: 1fr;
   }
 }
 /* 关于页品牌区 */

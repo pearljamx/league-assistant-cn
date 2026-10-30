@@ -38,7 +38,7 @@
 - `npm ci` 安装锁定依赖。
 - `npm run dev` 启动桌面开发环境。
 - `npm run typecheck` 类型检查；`npm test` 单元与集成测试。
-- `npm run test:companions` 与 `npm run test:history` 使用断网合成服务验证跨窗与玩家详情，不向真实客户端写入。
+- `npm run test:companions`、`npm run test:history` 与 `npm run test:live` 使用断网合成服务验证跨窗、玩家详情和十人实时版面，不向真实客户端写入；它们加载 out/，改动界面后先 `npm run build`。
 - `npm run build:win` 构建 Windows 安装版和便携版。
 - OCR 的构建与测试见 README；运行用户无需单独安装 Python。
 - Windows 打包前运行 `npm run ocr:build`；`build:win` 会验证 OCR 健康状态、收集软件许可，生成 Setup.exe、Portable.exe 和 SHA256SUMS。

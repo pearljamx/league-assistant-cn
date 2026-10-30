@@ -116,13 +116,22 @@ try {
     name: "查看实时玩家 测试队友#TEST",
     exact: true,
   });
-  await expect(mate.locator(".live-tag.met")).toHaveText("遇到过 1 次");
-  await expect(mate.locator(".live-tag.good")).toHaveText("好队友");
+  const liveCard = (button) =>
+    page.locator(".live-card").filter({ has: button });
+  await expect(liveCard(mate).locator(".live-tag.met")).toHaveText(
+    "遇到过 1 次",
+  );
+  await expect(liveCard(mate).locator(".live-tag.good")).toHaveText("好队友");
+  await expect(liveCard(mate).locator(".live-rank")).toHaveText(
+    "单双 黄金 II 35 点",
+  );
+  await expect(liveCard(mate).locator(".live-match").first()).toBeVisible();
   await expect(
-    page
-      .getByRole("button", { name: /查看实时玩家 测试账号/ })
-      .locator(".live-tag.met"),
+    liveCard(
+      page.getByRole("button", { name: /查看实时玩家 测试账号/ }),
+    ).locator(".live-tag.met"),
   ).toHaveCount(0);
+  report.checks.push("实时玩家卡片显示段位与可滚动近期战绩");
   report.checks.push("实时玩家卡片显示遇到过次数与本机标记，本人不显示遇到过");
   await mate.click();
   await expect(tab().locator(".hw-profile h2")).toHaveText("测试队友");

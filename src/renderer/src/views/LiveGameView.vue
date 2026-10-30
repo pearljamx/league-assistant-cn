@@ -8,7 +8,7 @@ import {
   ref,
   watch,
 } from "vue";
-import { ChevronRight, Radio, RefreshCw, Users } from "@lucide/vue";
+import { Radio, RefreshCw, Users } from "@lucide/vue";
 import { api, unwrap } from "../api";
 import {
   browseHero,
@@ -20,7 +20,15 @@ import {
   settings,
   state,
 } from "../store";
-import { duration, modeName, percent, playerTagNames } from "../format";
+import {
+  date,
+  duration,
+  matchMode,
+  modeName,
+  percent,
+  playerTagNames,
+  tierName,
+} from "../format";
 import {
   premadeGroups,
   streakOf,
@@ -34,14 +42,28 @@ import type {
   LivePlayer,
   Match,
   PlayerNote,
+  RankedEntry,
   Selection,
 } from "../../../shared/types";
 
+/** 卡片战绩列表的一行，只保留展示所需字段。 */
+interface RecentRow {
+  id: string;
+  championId: number;
+  queue: string;
+  date: string;
+  win: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  sameMode: boolean;
+}
 interface RecentRecord {
   games: number;
   wins: number;
   /** 近期全部有效对局（从新到旧），用于连胜连败与预组队推断。 */
   history: RecentGame[];
+  rows: RecentRow[];
   error: string | null;
 }
 const live = ref<LiveGame | null>(null);
@@ -54,6 +76,8 @@ const selection = ref<Selection>({
 const heroStats = ref<HeroStat[]>([]);
 const recent = ref<Record<string, RecentRecord>>({});
 const loading = ref<Record<string, boolean>>({});
+/** 段位：null 表示读取失败，与“未定级”（空数组）区分。 */
+const ranked = ref<Record<string, RankedEntry[] | null>>({});
 /** 本机标记与本人遇到记录，只按公开 PUUID 读取。 */
 const notes = ref<Record<string, PlayerNote | null>>({});
 const encounters = ref<Record<string, EncounterSummary | null>>({});
@@ -139,6 +163,71 @@ function tagsOf(player: LivePlayer): LiveTag[] {
     tags.push({ text: "已备注", kind: "watch", title: note.note });
   return tags;
 }
+/** 队伍近期同模式胜率：只合计已读到战绩的公开玩家，没有样本时留空。 */
+function teamRecord(players: LivePlayer[]) {
+  let games = 0,
+    wins = 0;
+  for (const player of players) {
+    const record = player.puuid ? recent.value[player.puuid] : undefined;
+    games += record?.games ?? 0;
+    wins += record?.wins ?? 0;
+  }
+  return { games, wins };
+}
+const recordOf = (player: LivePlayer) =>
+  player.puuid ? recent.value[player.puuid] : undefined;
+/** 同模式场均 KDA，没有同模式对局时为空。 */
+function kdaOf(player: LivePlayer) {
+  const rows = recordOf(player)?.rows.filter((row) => row.sameMode) ?? [];
+  if (!rows.length) return null;
+  const sum = rows.reduce(
+    (total, row) => ({
+      kills: total.kills + row.kills,
+      deaths: total.deaths + row.deaths,
+      assists: total.assists + row.assists,
+    }),
+    { kills: 0, deaths: 0, assists: 0 },
+  );
+  return ((sum.kills + sum.assists) / Math.max(sum.deaths, 1)).toFixed(1);
+}
+/** 近期最常用的英雄（最多 6 个），按场次排序。 */
+function usageOf(player: LivePlayer) {
+  const usage = new Map<number, { id: number; games: number; wins: number }>();
+  for (const row of recordOf(player)?.rows ?? []) {
+    const item = usage.get(row.championId) ?? {
+      id: row.championId,
+      games: 0,
+      wins: 0,
+    };
+    item.games++;
+    if (row.win) item.wins++;
+    usage.set(row.championId, item);
+  }
+  return [...usage.values()].sort((a, b) => b.games - a.games).slice(0, 6);
+}
+const apexTiers = ["MASTER", "GRANDMASTER", "CHALLENGER"];
+function rankOf(player: LivePlayer) {
+  if (!player.puuid) return "";
+  const rows = ranked.value[player.puuid];
+  if (rows === undefined) return "";
+  if (rows === null) return "段位暂不可用";
+  const row =
+    rows.find((item) => item.queue === "RANKED_SOLO_5x5" && item.tier) ??
+    rows.find((item) => item.tier);
+  if (!row) return "未定级";
+  return [
+    row.queue === "RANKED_SOLO_5x5" ? "单双" : "灵活",
+    tierName(row.tier),
+    apexTiers.includes(row.tier) ? "" : row.division,
+    row.lp + " 点",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+const nameOf = (player: LivePlayer) => {
+  const [name, tag] = (player.riotId || "公开玩家").split("#");
+  return { name, tag };
+};
 const isPublic = (player: LivePlayer) =>
   !player.identityHidden &&
   Boolean(player.puuid || player.riotId?.includes("#"));
@@ -181,6 +270,7 @@ async function loadLive() {
     live.value = result;
     for (const player of result.players) {
       void loadRecent(player);
+      void loadRank(player);
       void loadMarks(player);
     }
   } catch (reason) {
@@ -238,22 +328,35 @@ async function loadRecent(player: LivePlayer) {
     const page = await unwrap(api.getHistory(puuid, 0));
     if (epoch !== teamEpoch || current !== context()) return;
     const history: RecentGame[] = [];
+    const rows: RecentRow[] = [];
     for (const match of page.matches) {
       if (match.private || match.remake || match.duration < 240) continue;
       const self = match.players.find((item) => item.puuid === puuid);
-      if (self)
-        history.push({
-          matchId: match.id,
-          teamId: self.teamId,
-          win: self.win,
-          sameMode: sameMode(match),
-        });
+      if (!self) continue;
+      history.push({
+        matchId: match.id,
+        teamId: self.teamId,
+        win: self.win,
+        sameMode: sameMode(match),
+      });
+      rows.push({
+        id: match.id,
+        championId: self.championId,
+        queue: matchMode(match),
+        date: date(match.date),
+        win: self.win,
+        kills: self.kills,
+        deaths: self.deaths,
+        assists: self.assists,
+        sameMode: sameMode(match),
+      });
     }
     const records = history.filter((game) => game.sameMode);
     recent.value[puuid] = {
       games: records.length,
       wins: records.filter((game) => game.win).length,
       history,
+      rows,
       error: null,
     };
   } catch (reason) {
@@ -262,11 +365,23 @@ async function loadRecent(player: LivePlayer) {
         games: 0,
         wins: 0,
         history: [],
+        rows: [],
         error: (reason as Error).message,
       };
   } finally {
     loading.value[puuid] = false;
   }
+}
+/** 读取段位；失败记为 null，不当作未定级。 */
+async function loadRank(player: LivePlayer) {
+  const puuid = player.puuid;
+  if (!puuid || player.identityHidden || puuid in ranked.value) return;
+  const epoch = teamEpoch,
+    current = context();
+  ranked.value[puuid] = null;
+  const result = await api.getRanked(puuid).catch(() => null);
+  if (epoch !== teamEpoch || current !== context()) return;
+  ranked.value[puuid] = result?.ok ? (result.data ?? []) : null;
 }
 /** 读取本机标记和遇到记录；失败时不显示标签，不影响其他信息。 */
 async function loadMarks(player: LivePlayer) {
@@ -287,6 +402,7 @@ function resetTeam() {
   teamEpoch++;
   recent.value = {};
   loading.value = {};
+  ranked.value = {};
   notes.value = {};
   encounters.value = {};
 }
@@ -360,18 +476,14 @@ defineExpose({ refresh });
 <template>
   <section class="live-view">
     <div class="live-heading">
-      <div>
-        <span class="hw-kicker">LIVE GAME</span>
-        <h2>
-          {{ live?.status === "selection" ? "英雄选择" : "实时对局" }}
-          <small v-if="live && live.status !== 'idle'"
-            >{{ modeName(live.mode) }}<i>·</i
-            >{{ duration(live.gameTime) }}</small
-          >
-        </h2>
-      </div>
+      <h2>
+        {{ live?.status === "selection" ? "英雄选择" : "实时对局" }}
+        <small v-if="live && live.status !== 'idle'"
+          >{{ modeName(live.mode) }}<i>·</i>{{ duration(live.gameTime) }}</small
+        >
+      </h2>
       <div class="live-message">
-        <Radio :size="15" /><span>{{
+        <Radio :size="14" /><span>{{
           error || live?.message || "正在读取当前对局…"
         }}</span
         ><small>每 5 秒更新</small>
@@ -401,48 +513,143 @@ defineExpose({ refresh });
         :class="['live-team', team.ally ? 'ally' : 'enemy']"
       >
         <div class="live-team-heading">
-          <h3>
-            {{ team.ally ? "我方" : "敌方" }}
-            <small>{{
-              team.id === 100
-                ? "蓝色方"
-                : team.id === 200
-                  ? "红色方"
-                  : "队伍 " + team.id
-            }}</small>
-          </h3>
+          <i class="live-team-dot" />
+          <h3>{{ team.ally ? "我方" : "敌方" }}</h3>
+          <small>{{
+            team.id === 100
+              ? "蓝色方"
+              : team.id === 200
+                ? "红色方"
+                : "队伍 " + team.id
+          }}</small>
+          <template v-if="teamRecord(team.players).games">
+            <b
+              :class="
+                teamRecord(team.players).wins * 2 >=
+                teamRecord(team.players).games
+                  ? 'good'
+                  : 'bad'
+              "
+              :title="`公开玩家近期同模式合计 ${teamRecord(team.players).games} 场`"
+              >{{
+                percent(
+                  teamRecord(team.players).wins /
+                    teamRecord(team.players).games,
+                )
+              }}</b
+            ><small>近期同模式胜率</small>
+          </template>
           <span>{{ team.players.length }} 位玩家</span>
         </div>
-        <button
-          v-for="player in team.players"
-          :key="player.key"
-          class="live-card"
-          :disabled="!isPublic(player)"
-          :aria-label="
-            isPublic(player)
-              ? '查看实时玩家 ' + (player.riotId || '公开玩家')
-              : '身份隐藏，无法查询'
-          "
-          @click="viewPlayer(player)"
-        >
-          <ChampionIcon
-            :champion="champions.get(player.championId)"
-            :size="46"
-          />
-          <span class="live-card-identity">
-            <b
-              >{{
-                player.identityHidden
-                  ? "身份未公开"
-                  : player.riotId || "公开玩家"
-              }}<small v-if="player.isSelf" class="self-tag">我</small></b
+        <div class="live-cards">
+          <article
+            v-for="player in team.players"
+            :key="player.key"
+            :class="[
+              'live-card',
+              player.puuid && premade[player.puuid]
+                ? 'premade-' + (((premade[player.puuid] - 1) % 4) + 1)
+                : '',
+              { self: player.isSelf },
+            ]"
+          >
+            <button
+              class="live-card-head"
+              :disabled="!isPublic(player)"
+              :aria-label="
+                isPublic(player)
+                  ? '查看实时玩家 ' + (player.riotId || '公开玩家')
+                  : '身份隐藏，无法查询'
+              "
+              @click="viewPlayer(player)"
             >
-            <span
-              >{{ champions.get(player.championId)?.name || "尚未选择英雄"
-              }}<i v-if="positionOf(player)">· {{ positionOf(player) }}</i
-              ><i v-if="player.level !== null">· Lv.{{ player.level }}</i></span
+              <span class="live-avatar">
+                <ChampionIcon
+                  :champion="champions.get(player.championId)"
+                  :size="40"
+                />
+                <em v-if="player.level !== null" title="当前对局等级">{{
+                  player.level
+                }}</em>
+              </span>
+              <span class="live-card-identity">
+                <b>
+                  <template v-if="player.identityHidden">身份未公开</template>
+                  <template v-else>
+                    <span class="live-name">{{ nameOf(player).name }}</span>
+                    <small v-if="nameOf(player).tag"
+                      >#{{ nameOf(player).tag }}</small
+                    >
+                  </template>
+                  <small v-if="player.isSelf" class="self-tag">我</small>
+                </b>
+                <span class="live-rank">{{
+                  player.identityHidden
+                    ? "不查询"
+                    : rankOf(player) || "正在读取段位"
+                }}</span>
+              </span>
+            </button>
+            <div class="live-card-sub">
+              <span>{{
+                champions.get(player.championId)?.name || "尚未选择英雄"
+              }}</span>
+              <i v-if="positionOf(player)">{{ positionOf(player) }}</i>
+              <span class="live-hero-rate"
+                >英雄胜率 {{ percent(heroStat(player.championId)?.winRate) }}</span
+              >
+            </div>
+            <div class="live-stats">
+              <span>
+                <b
+                  v-if="recordOf(player)?.games"
+                  :class="
+                    recordOf(player)!.wins * 2 >= recordOf(player)!.games
+                      ? 'good'
+                      : 'bad'
+                  "
+                  >{{
+                    percent(recordOf(player)!.wins / recordOf(player)!.games)
+                  }}</b
+                ><b v-else>—</b>
+                <small>{{
+                  !player.puuid
+                    ? "身份隐藏"
+                    : recordOf(player)?.error
+                      ? "战绩暂不可用"
+                      : recordOf(player)
+                        ? recordOf(player)!.games + " 场同模式"
+                        : "正在读取"
+                }}</small>
+              </span>
+              <span>
+                <b>{{ kdaOf(player) ?? "—" }}</b
+                ><small>同模式 KDA</small>
+              </span>
+              <span v-if="live?.status === 'live'">
+                <b>{{
+                  [player.kills, player.deaths, player.assists]
+                    .map((value) => (value === null ? "—" : value))
+                    .join("/")
+                }}</b
+                ><small>本局 K/D/A</small>
+              </span>
+            </div>
+            <div
+              v-if="live?.status === 'live' && player.items.length"
+              class="live-card-items"
             >
-            <span v-if="tagsOf(player).length" class="live-tags">
+              <img
+                v-for="(id, index) in player.items.filter(
+                  (id) => id && catalog.items[id]?.icon,
+                )"
+                :key="index"
+                :src="catalog.items[id].icon"
+                :title="catalog.items[id].name"
+                alt=""
+              />
+            </div>
+            <div v-if="tagsOf(player).length" class="live-tags">
               <em
                 v-for="tag in tagsOf(player)"
                 :key="tag.text"
@@ -450,79 +657,75 @@ defineExpose({ refresh });
                 :title="tag.title"
                 >{{ tag.text }}</em
               >
-            </span>
-          </span>
-          <span class="live-card-stat">
-            <b>{{ percent(heroStat(player.championId)?.winRate) }}</b
-            ><small>英雄胜率</small>
-          </span>
-          <span class="live-card-stat">
-            <b>{{
-              player.puuid && recent[player.puuid]?.games
-                ? percent(
-                    recent[player.puuid].wins / recent[player.puuid].games,
-                  )
-                : "—"
-            }}</b
-            ><small>{{
-              !player.puuid
-                ? "身份隐藏"
-                : recent[player.puuid]?.error
-                  ? "战绩暂不可用"
-                  : recent[player.puuid]
-                    ? recent[player.puuid].games + " 场同模式"
-                    : "正在读取"
-            }}</small>
-          </span>
-          <span v-if="live?.status === 'live'" class="live-card-stat">
-            <b>{{
-              [player.kills, player.deaths, player.assists]
-                .map((value) => (value === null ? "—" : value))
-                .join(" / ")
-            }}</b
-            ><small>K / D / A</small>
-          </span>
-          <span v-if="live?.status === 'live'" class="live-card-items">
-            <img
-              v-for="(id, index) in player.items.filter(
-                (id) => id && catalog.items[id]?.icon,
-              )"
-              :key="index"
-              :src="catalog.items[id].icon"
-              :title="catalog.items[id].name"
-              alt=""
-            />
-          </span>
-          <ChevronRight v-if="isPublic(player)" :size="15" class="muted" />
-        </button>
+            </div>
+            <div v-if="usageOf(player).length" class="live-usage">
+              <span
+                v-for="item in usageOf(player)"
+                :key="item.id"
+                :class="item.wins * 2 >= item.games ? 'good' : 'bad'"
+                :title="`${champions.get(item.id)?.name || item.id}：近期 ${item.games} 场 ${item.wins} 胜`"
+              >
+                <ChampionIcon :champion="champions.get(item.id)" :size="20" />
+              </span>
+            </div>
+            <div class="live-matches" tabindex="0" aria-label="近期战绩">
+              <div
+                v-for="row in recordOf(player)?.rows ?? []"
+                :key="row.id"
+                :class="['live-match', row.win ? 'win' : 'loss']"
+              >
+                <ChampionIcon
+                  :champion="champions.get(row.championId)"
+                  :size="24"
+                />
+                <span class="live-match-info">
+                  <b>{{ row.queue }}</b>
+                  <small
+                    >{{ row.date }} <i>{{ row.win ? "胜" : "负" }}</i></small
+                  >
+                </span>
+                <span class="live-match-kda"
+                  >{{ row.kills }}/{{ row.deaths }}/{{ row.assists }}</span
+                >
+              </div>
+              <p
+                v-if="!recordOf(player)?.rows.length"
+                class="live-matches-empty"
+              >
+                {{
+                  !player.puuid
+                    ? "身份隐藏，不查询战绩"
+                    : recordOf(player)?.error
+                      ? "战绩暂不可用"
+                      : recordOf(player)
+                        ? "暂无公开对局"
+                        : "正在读取战绩…"
+                }}
+              </p>
+            </div>
+          </article>
+        </div>
       </section>
     </div>
-    <template v-if="state.phase === 'ChampSelect'">
-      <div class="section-line spaced">
-        <h2>备选英雄</h2>
-        <span class="muted small">点击查看配装 · 换用请在快速选择窗操作</span>
-      </div>
-      <div class="bench-grid">
-        <button
-          v-for="id in selection.bench"
-          :key="id"
-          class="bench-card"
-          @click="browseHero(id, true)"
-        >
-          <ChampionIcon :champion="champions.get(id)" :size="46" />
-          <div>
-            <strong>{{ champions.get(id)?.name || id }}</strong
-            ><span
-              >{{ percent(heroStat(id)?.winRate) }}
-              <small>统计胜率</small></span
-            >
-          </div>
-          <ChevronRight :size="15" />
-        </button>
-      </div>
-      <p v-if="!selection.bench.length" class="empty-inline">
-        当前没有备选英雄
-      </p>
-    </template>
+    <div v-if="state.phase === 'ChampSelect'" class="live-bench">
+      <h3>备选英雄</h3>
+      <button
+        v-for="id in selection.bench"
+        :key="id"
+        class="live-bench-item"
+        :aria-label="'查看备选英雄 ' + (champions.get(id)?.name || id)"
+        :title="champions.get(id)?.name || String(id)"
+        @click="browseHero(id, true)"
+      >
+        <ChampionIcon :champion="champions.get(id)" :size="28" />
+        <span>{{ percent(heroStat(id)?.winRate) }}</span>
+      </button>
+      <span v-if="!selection.bench.length" class="muted small"
+        >当前没有备选英雄</span
+      >
+      <span class="muted small live-bench-hint"
+        >点击查看配装 · 换用请在快速选择窗操作</span
+      >
+    </div>
   </section>
 </template>

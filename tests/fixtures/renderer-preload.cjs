@@ -187,6 +187,56 @@ const fixturePlayers = () => [
     cs: 80,
   },
 ];
+/** 十人实时布局场景（FIXTURE_LIVE_FULL=1）：纯合成数据，只用于检查版面。 */
+const liveFull = process.env.FIXTURE_LIVE_FULL === "1";
+const fullIds = Array.from({ length: 10 }, (_, index) =>
+  index === 0 ? "fixture-player" : "fixture-full-" + index,
+);
+const fullLivePlayers = () =>
+  fullIds.map((puuid, index) => ({
+    key: "live:" + index,
+    puuid: index === 7 ? null : puuid,
+    riotId: index === 7 ? null : `合成玩家名字较长${index}#${1000 + index}`,
+    championId: [202, 22, 99][index % 3],
+    teamId: index < 5 ? 100 : 200,
+    kills: index,
+    deaths: 3,
+    assists: 10 - index,
+    level: 8 + index,
+    items: [],
+    isSelf: index === 0,
+    identityHidden: index === 7,
+  }));
+const fullHistory = (puuid) => {
+  const index = fullIds.indexOf(puuid);
+  // 玩家 1、2 共用前几场对局，用来显示预组队边框。
+  const shared = index === 1 || index === 2;
+  return Array.from({ length: 20 }, (_, game) => ({
+    id: shared && game < 3 ? "shared-" + game : `${puuid}-${game}`,
+    queueId: game % 4 === 3 ? 450 : 3270,
+    mode: game % 4 === 3 ? "ARAM" : "KIWI",
+    date: "2026-10-29T00:00:00Z",
+    duration: 1200,
+    private: false,
+    remake: false,
+    players: [
+      {
+        puuid,
+        name: "合成玩家",
+        championId: [202, 22, 99][(index + game) % 3],
+        teamId: 100,
+        win: (index + game) % 3 !== 0,
+        kills: game,
+        deaths: 1 + (game % 5),
+        assists: 20 - game,
+        items: [],
+        damage: 1000,
+        gold: 1000,
+        cs: 10,
+      },
+    ],
+  }));
+};
 const fixtureMatch = () => ({
   id: "100001",
   queueId: 3270,
@@ -325,7 +375,16 @@ const api = {
       ],
     });
   },
-  getHistory: async () => {
+  getHistory: async (puuid) => {
+    if (liveFull)
+      return ok({
+        matches: fullHistory(puuid),
+        nextIndex: 20,
+        hasMore: false,
+        source: "sgp",
+        warning: null,
+        fetchedAt: "2026-10-29T00:00:00Z",
+      });
     const delay = historyDelay;
     historyDelay = 0;
     const result = {
@@ -368,8 +427,9 @@ const api = {
       gameTime: state.phase === "InProgress" ? 600 : null,
       message: "隔离实时对局数据",
       updatedAt: "",
-      players:
-        state.phase === "InProgress"
+      players: liveFull
+        ? fullLivePlayers()
+        : state.phase === "InProgress"
           ? fixturePlayers().map((player, index) => ({
               key: String(index),
               puuid: index === 2 ? null : player.puuid,

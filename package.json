@@ -33,6 +33,7 @@
     "test:renderer": "node scripts/smoke-renderer.mjs",
     "test:companions": "node scripts/smoke-companions.mjs",
     "test:history": "node scripts/smoke-history.mjs",
+    "test:live": "node scripts/smoke-live.mjs",
     "test:portable": "node scripts/smoke-portable.mjs",
     "ocr:test": ".venv-ocr\\Scripts\\python.exe -m unittest discover -s worker/tests -v",
     "ocr:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-ocr.ps1"
