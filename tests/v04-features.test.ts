@@ -281,11 +281,14 @@ describe("跳过点赞与选人聊天", () => {
     const { client, calls, phase } = makeClient({});
     await expect(client.sendChampSelectChat(["a"])).rejects.toThrow("选人");
     phase("ChampSelect");
-    const sending = client.sendChampSelectChat(["一", "二", "三"]);
+    // 立即挂上处理，避免计时推进期间的拒绝被当作未处理错误。
+    const sending = client
+      .sendChampSelectChat(["一", "二", "三"])
+      .then(() => null, (error: Error) => error);
     await vi.advanceTimersByTimeAsync(450);
     phase("GameStart");
     await vi.advanceTimersByTimeAsync(1000);
-    await expect(sending).rejects.toThrow("离开选人");
+    expect((await sending)?.message).toContain("离开选人");
     const sent = calls.filter((call) => call.method === "POST");
     expect(sent).toHaveLength(2);
     expect(sent[0]).toEqual({
