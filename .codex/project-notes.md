@@ -163,3 +163,8 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 版本 0.4.1，build:win 成功：Setup 42b8bf80…、Portable 70e3500b…（完整值见 Release 的 SHA256SUMS）。提交 0b9dc36（功能）+ 4b553c7（版本号）推送，标签 v0.4.1 → 4b553c7，gh release --prerelease 上传三附件；服务端 digest 与本地一致，公开 SHA256SUMS diff 一致。
 - 用 updater.latestRelease 解析线上 releases API：最新 0.4.1，安装包与 SHA256SUMS 均识别，compareVersions(0.4.1, 0.4.0)=1，即 0.4.0 用户可在线更新到此版本（真实下载安装流程仍待用户实测）。
 - Windows CI 41417288572 success。
+
+## 2026-11-02 v0.4.2 发布
+
+- 修复 438737d + 版本 84f8658，标签 v0.4.2 → 84f8658；Setup e224d5ae…、Portable 94120678…，服务端 digest 与本地一致，公开 SHA256SUMS diff 一致；Windows CI 41465568411 success。
+- 发布说明写明 0.4.0/0.4.1 的旧更新器无法在线升级到本版，需手动安装一次。
