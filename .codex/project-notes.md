@@ -157,3 +157,9 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 海斗分：用户再次要求接入。Hexdata 服务端对非官网调用返回 403 web_lookup_only，并需登录与按账号限额，所以仍不代查。新增 providers/hexdata-capture.ts：watchHexdataReports 在官方窗口 webContents.debugger 上只监听 Network.responseReceived/loadingFinished，URL 等于 match-report 且 200 时 getResponseBody；parseMatchReport 严格校验 schema v1、targetEstimate.status=ready、0–10000 分、完整游戏 ID。按 hexdata-capture-v1:{riotId 小写} 保存；是本人时同时写 hexdata-manual-v1:{platform}:{puuid}；广播 assistant:hexdata-score，Mini 与玩家页即时刷新。source=official 显示“官网查询 月/日 · ±误差”。percentileBps 方向不明，未展示。open hexdata-copy 可传其他玩家游戏 ID；玩家页加“官网查分”。
 - 用 esbuild 打包临时脚本在真实 Electron 中验证（session.protocol.handle 伪造 hexdata 页面与 match-report，断网）：页面 fetch 200，监听拿到正文并解析出 1623 ±48。
 - 验证：vitest 173；test:companions/renderer/history/live 无错误。真实官网与真实客户端未测；用户需在助手内官方窗口登录 Hexdata 后查询一次确认。
+
+## 2026-11-02 v0.4.1 发布
+
+- 版本 0.4.1，build:win 成功：Setup 42b8bf80…、Portable 70e3500b…（完整值见 Release 的 SHA256SUMS）。提交 0b9dc36（功能）+ 4b553c7（版本号）推送，标签 v0.4.1 → 4b553c7，gh release --prerelease 上传三附件；服务端 digest 与本地一致，公开 SHA256SUMS diff 一致。
+- 用 updater.latestRelease 解析线上 releases API：最新 0.4.1，安装包与 SHA256SUMS 均识别，compareVersions(0.4.1, 0.4.0)=1，即 0.4.0 用户可在线更新到此版本（真实下载安装流程仍待用户实测）。
+- Windows CI 41417288572 success。
