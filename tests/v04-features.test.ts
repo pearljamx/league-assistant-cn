@@ -299,3 +299,43 @@ describe("跳过点赞与选人聊天", () => {
     client.stop();
   });
 });
+
+describe("Hexdata 官方窗口查询结果", async () => {
+  const { parseMatchReport, sameRiotId } = await import(
+    "../src/main/providers/hexdata-capture"
+  );
+  const body = (estimate: Record<string, unknown>, id = "名字 # TAG") => ({
+    report: {
+      schemaVersion: "hexdata-public-match-report-v1",
+      resolvedGameId: id,
+      regionKey: "hn1",
+      generatedAt: "2026-11-02T00:00:00Z",
+      targetEstimate: estimate,
+    },
+  });
+  it("只记录 ready 的分数，取整并标明来源", () => {
+    const capture = parseMatchReport(
+      body({ status: "ready", score: 1580.6, intervalHalfWidth: 40.4 }),
+      new Date("2026-11-02T08:00:00Z"),
+    );
+    expect(capture).toEqual({
+      riotId: "名字#TAG",
+      region: "HN1",
+      score: {
+        score: 1581,
+        recordedAt: "2026-11-02T08:00:00.000Z",
+        source: "official",
+        interval: 40,
+        generatedAt: "2026-11-02T00:00:00Z",
+      },
+    });
+    expect(sameRiotId("名字#tag", " 名字 # TAG ")).toBe(true);
+  });
+  it("数据不足、格式不符或分数异常都不记录", () => {
+    expect(parseMatchReport(body({ status: "collecting_data" }))).toBeNull();
+    expect(parseMatchReport(body({ status: "ready", score: -1 }))).toBeNull();
+    expect(parseMatchReport(body({ status: "ready", score: 1500 }, "无标签"))).toBeNull();
+    expect(parseMatchReport({ report: { schemaVersion: "v2" } })).toBeNull();
+    expect(parseMatchReport(null)).toBeNull();
+  });
+});

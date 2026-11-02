@@ -21,7 +21,10 @@ import { TencentProvider } from "./providers/tencent";
 import { AramHexProvider } from "./providers/aramhex";
 import { HistoryProvider } from "./providers/history";
 import { LiveGameProvider } from "./providers/live-game";
-import { SkillRatingProvider } from "./providers/rating";
+import {
+  SkillRatingProvider,
+  normalizeRatingRiotId,
+} from "./providers/rating";
 import { RuneService } from "./runes";
 import { RecognitionService } from "./recognition";
 import { AppError, safeError } from "./errors";
@@ -50,6 +53,11 @@ import { AramggSources, PublicAramggProvider } from "./providers/aramgg-public";
 import { AramBalanceProvider } from "./providers/aram-balance";
 import { statsLine, summarize } from "./team-stats";
 import { Updater } from "./updater";
+import {
+  parseMatchReport,
+  sameRiotId,
+  watchHexdataReports,
+} from "./providers/hexdata-capture";
 import type {
   HexdataManualScore,
   Result,
@@ -87,6 +95,8 @@ const hexdataPage = (raw: string) => {
 const openOutside = (raw: string) => {
   if (/^https:\/\//.test(raw)) void shell.openExternal(raw);
 };
+/** 官方查分窗口里，用户自己查询得到的结果交给这里记录（启动后设置）。 */
+let onHexdataReport: ((body: unknown) => void) | null = null;
 // 该窗口不在 ownedWindows 中、没有 preload，因此无法调用助手的任何接口。
 function openHexdata(url: string) {
   if (hexdataWindow && !hexdataWindow.isDestroyed()) {
@@ -117,6 +127,7 @@ function openHexdata(url: string) {
     },
   });
   const contents = hexdataWindow.webContents;
+  watchHexdataReports(contents, (body) => onHexdataReport?.(body));
   contents.setWindowOpenHandler(({ url: next }) => {
     if (hexdataPage(next)) void contents.loadURL(next);
     else openOutside(next);
@@ -680,9 +691,13 @@ else {
               : undefined
             : z.string().min(1).max(100).parse(value);
         const result = await rating.query(riotId, platform);
-        // 只有查询本人时附上本机手动记录的海斗分。
+        // 查询本人时附上本机记录；查询其他玩家时附上在官方窗口查过的结果。
         const manual =
-          value === undefined && owner ? await manualScore(platform, owner) : null;
+          value === undefined && owner
+            ? await manualScore(platform, owner)
+            : riotId
+              ? await capturedScore(riotId)
+              : null;
         if (
           client.state.summoner?.puuid !== owner ||
           client.state.platform !== platform ||
@@ -712,6 +727,40 @@ else {
           ? data
           : null;
       }
+      const captureKey = (riotId: string) =>
+        `hexdata-capture-v1:${riotId.toLowerCase()}`;
+      async function capturedScore(riotId: string) {
+        const saved = await storage.cache<HexdataManualScore | null>(
+          captureKey(normalizeRatingRiotId(riotId)),
+        );
+        const data = saved?.data;
+        return data && Number.isInteger(data.score) ? data : null;
+      }
+      /**
+       * 用户在官方窗口查询后记录结果：按游戏 ID 保存；查的是本人时同时作为本人的海斗分，
+       * 并通知小窗刷新。数据不足或格式不符的结果不记录。
+       */
+      onHexdataReport = (body) =>
+        void (async () => {
+          const capture = parseMatchReport(body);
+          if (!capture) return;
+          await storage.put(captureKey(capture.riotId), capture.score);
+          const own = client.state.summoner;
+          if (
+            own?.puuid &&
+            own.tagLine &&
+            client.state.status === "connected" &&
+            sameRiotId(capture.riotId, `${own.gameName}#${own.tagLine}`)
+          )
+            await storage.put(
+              manualKey(client.state.platform, own.puuid),
+              capture.score,
+            );
+          broadcast("assistant:hexdata-score", {
+            riotId: capture.riotId,
+            score: capture.score,
+          });
+        })().catch(() => {});
       handle("hexdata-score-save", async (value) => {
         const score = z.number().int().min(0).max(10000).nullable().parse(value);
         const owner = client.state.summoner?.puuid;
@@ -720,7 +769,11 @@ else {
         const record =
           score === null
             ? null
-            : { score, recordedAt: new Date().toISOString() };
+            : {
+                score,
+                recordedAt: new Date().toISOString(),
+                source: "manual" as const,
+              };
         await storage.put(manualKey(client.state.platform, owner), record);
         return record;
       });
@@ -730,7 +783,7 @@ else {
         "data-license": "https://github.com/czgreat/aramhex-data",
         "aramgg-developer": "https://data.dtodo.cn/developer.html",
       };
-      handle("open", (value) => {
+      handle("open", (value, riotId) => {
         const target = z
           .enum([
             "hexdata",
@@ -742,9 +795,16 @@ else {
           .parse(value);
         if (target === "hexdata-copy") {
           // 复制本人 Riot ID 方便在官方页面粘贴查询；不向页面注入或代填。
+          // 可传入其他玩家的完整游戏 ID；否则复制本人。
           const own = client.state.summoner;
-          if (own?.gameName && own.tagLine)
-            clipboard.writeText(`${own.gameName}#${own.tagLine}`);
+          const target =
+            riotId === undefined
+              ? own?.gameName && own.tagLine
+                ? `${own.gameName}#${own.tagLine}`
+                : null
+              : normalizeRatingRiotId(z.string().max(100).parse(riotId));
+          if (target && /^[^#\r\n]+#[^#\r\n]+$/.test(target))
+            clipboard.writeText(target);
           openHexdata(urls.hexdata);
         } else if (target === "hexdata") openHexdata(urls.hexdata);
         else return shell.openExternal(urls[target]);

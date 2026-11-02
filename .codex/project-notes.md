@@ -150,3 +150,10 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 本机安装尝试：旧 0.3.0 装在 E:\英雄联盟助手\测试\LeagueAssistantCN\PearljamHex。关闭助手后以 `--updated /S --force-run /D=原目录` 和 `/S /D=原目录` 运行均退出码 2；Restart Manager 显示 resourcespp.asar 被 Claude 桌面应用（Electron 会把扫描到的 .asar 当压缩包打开）持有，改名也失败。教训：不要把测试安装放在 Claude 打开的项目目录内。用户决定推送后自行安装。
 - 提交 da1a38a 推送 main，标签 v0.4.0，gh release create --prerelease 上传三个附件；服务端 digest 与本地一致，公开 SHA256SUMS 下载 diff 一致。附件构建自 da1a38a 之前的工作区（之后只改 README/记忆，不影响程序）。
 - 首轮 Windows CI 41413265707 失败：v04 测试中 sendChampSelectChat 的拒绝在 expect 挂上前发生，被 vitest 判为未处理错误（本机未复现）；6505d1e 改为立即 .then 捕获，重跑 CI 41413804955 通过（success）。
+
+## 2026-11-02 狂暴 0.1 秒 / 官方窗口记录海斗分
+
+- 用户嫌狂暴太慢，要求 0.1 秒一换。原实现每轮 getChampionChoices + chooseChampion 共约 5 个请求，且 championChoiceGuard 的 selectionRevision 会被交换引发的会话事件打断。改为 BERSERK_INTERVAL_MS=100 的快速路径：读一次会话 → choicesFromSession（卡片列表缓存 3 秒）→ 核对阶段/账号/连接/开关 → POST bench/swap；忙时跳过本轮。失败累计 ≥20 且 5 秒无成功才停。测试断言每次交换只有 2 个请求。
+- 海斗分：用户再次要求接入。Hexdata 服务端对非官网调用返回 403 web_lookup_only，并需登录与按账号限额，所以仍不代查。新增 providers/hexdata-capture.ts：watchHexdataReports 在官方窗口 webContents.debugger 上只监听 Network.responseReceived/loadingFinished，URL 等于 match-report 且 200 时 getResponseBody；parseMatchReport 严格校验 schema v1、targetEstimate.status=ready、0–10000 分、完整游戏 ID。按 hexdata-capture-v1:{riotId 小写} 保存；是本人时同时写 hexdata-manual-v1:{platform}:{puuid}；广播 assistant:hexdata-score，Mini 与玩家页即时刷新。source=official 显示“官网查询 月/日 · ±误差”。percentileBps 方向不明，未展示。open hexdata-copy 可传其他玩家游戏 ID；玩家页加“官网查分”。
+- 用 esbuild 打包临时脚本在真实 Electron 中验证（session.protocol.handle 伪造 hexdata 页面与 match-report，断网）：页面 fetch 200，监听拿到正文并解析出 1623 ±48。
+- 验证：vitest 173；test:companions/renderer/history/live 无错误。真实官网与真实客户端未测；用户需在助手内官方窗口登录 Hexdata 后查询一次确认。

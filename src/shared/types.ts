@@ -503,6 +503,12 @@ export interface UpdateState {
 export interface HexdataManualScore {
   score: number;
   recordedAt: string;
+  /** manual：用户手动填写；official：用户在助手内官方查分窗口自己查询后记录的结果。 */
+  source?: "manual" | "official";
+  /** 官网给出的误差范围（±分）。 */
+  interval?: number | null;
+  /** 官网报告生成时间。 */
+  generatedAt?: string | null;
 }
 export interface Recognition {
   gameWindow?: { x: number; y: number; width: number; height: number };
@@ -588,7 +594,13 @@ export interface AssistantApi {
       | "github"
       | "data-license"
       | "aramgg-developer",
+    /** hexdata-copy 时复制这个完整游戏 ID；不传则复制本人。 */
+    riotId?: string,
   ): Promise<Result<void>>;
+  /** 用户在官方查分窗口查询后，助手记录到新的海斗分。 */
+  onHexdataScore(
+    callback: (value: { riotId: string; score: HexdataManualScore }) => void,
+  ): () => void;
   getRecognition(): Promise<Result<Recognition>>;
   scanAugments(): Promise<Result<Recognition>>;
   setManualAugments(ids: number[]): Promise<Result<Recognition>>;

@@ -210,31 +210,56 @@ describe("狂暴切换", () => {
     expect(client.state.berserk).toBe(false);
     client.stop();
   });
-  it("按顺序循环换用，关闭后不再写入", async () => {
-    vi.useFakeTimers();
-    const { client, phase } = makeClient({});
-    phase("ChampSelect");
-    client.state.mode = "aram";
-    client.state.championId = 1;
+  /** 模拟客户端：会话里本人英雄与备选席，bench swap 交换两者。 */
+  function benchClient(failSwap = false) {
+    const ctx = makeClient({});
+    ctx.phase("ChampSelect");
+    ctx.client.state.mode = "aram";
+    let current = 1;
     let bench = [2, 3];
-    vi.spyOn(client, "getChampionChoices").mockImplementation(async () => ({
-      championIds: [...bench],
-      kind: "bench",
-      reason: "",
-    }));
-    const chosen: number[] = [];
-    vi.spyOn(client, "chooseChampion").mockImplementation(async (id) => {
-      chosen.push(id);
-      bench = bench.map((item) => (item === id ? client.state.championId! : item));
-      client.state.championId = id;
-    });
+    const swaps: number[] = [];
+    ctx.client.request = vi.fn(async (path: string, method = "GET") => {
+      if (path === "/lol-champ-select/v1/session")
+        return {
+          localPlayerCellId: 0,
+          benchEnabled: true,
+          benchChampions: bench.map((championId) => ({ championId })),
+          myTeam: [{ cellId: 0, puuid: "p1", championId: current }],
+        };
+      const swap = path.match(/bench\/swap\/(\d+)$/);
+      if (swap && method === "POST") {
+        if (failSwap) throw new Error("rejected");
+        const id = Number(swap[1]);
+        swaps.push(id);
+        bench = bench.map((item) => (item === id ? current : item));
+        current = id;
+      }
+    }) as typeof ctx.client.request;
+    return { ...ctx, swaps };
+  }
+  it("约 0.1 秒一换，按顺序循环，每次只读一次会话再交换", async () => {
+    vi.useFakeTimers();
+    const { client, swaps } = benchClient();
     client.setBerserk(true);
-    await vi.advanceTimersByTimeAsync(1500 * 3 + 10);
-    expect(chosen.slice(0, 4)).toEqual([2, 3, 1, 2]);
+    await vi.advanceTimersByTimeAsync(100 * 3 + 10);
+    expect(swaps.slice(0, 4)).toEqual([2, 3, 1, 2]);
+    const requests = (client.request as any).mock.calls.length;
+    expect(requests).toBe(swaps.length * 2);
     client.setBerserk(false);
-    const count = chosen.length;
-    await vi.advanceTimersByTimeAsync(6000);
-    expect(chosen).toHaveLength(count);
+    const count = swaps.length;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(swaps).toHaveLength(count);
+    client.stop();
+  });
+  it("交换一直被拒绝时 5 秒后自动停止", async () => {
+    vi.useFakeTimers();
+    const { client } = benchClient(true);
+    client.setBerserk(true);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(client.state.berserk).toBe(true);
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(client.state.berserk).toBe(false);
+    expect(client.state.message).toContain("5 秒");
     client.stop();
   });
 });

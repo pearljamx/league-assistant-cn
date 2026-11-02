@@ -191,6 +191,10 @@ export function startCompanion(
     api.onState(accept),
     api.onSettings((value) => (settings.value = value)),
     api.onCompanionState((value) => (companion.value = value)),
+    // 官方查分窗口查到本人的结果后刷新显示。
+    api.onHexdataScore(() => {
+      if (options.rating) void loadRating();
+    }),
   ];
   void (async () => {
     try {

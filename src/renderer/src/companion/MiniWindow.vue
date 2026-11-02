@@ -307,7 +307,10 @@ const ratingNote = computed(() => {
   const position = rating.value?.aramhex;
   if (!ready && manual.value) {
     const date = new Date(manual.value.recordedAt);
-    return `手动记录 ${date.getMonth() + 1}/${date.getDate()}`;
+    const day = `${date.getMonth() + 1}/${date.getDate()}`;
+    return manual.value.source === "official"
+      ? `官网查询 ${day}${manual.value.interval ? ` · ±${manual.value.interval}` : ""}`
+      : `手动记录 ${day}`;
   }
   if (position?.status === "ready" && position.percentile !== null)
     return `AramHex 区内前 ${(position.percentile * 100).toFixed(1)}%`;
@@ -425,7 +428,7 @@ onUnmounted(() => {
             :class="['berserk-button', { on: state.berserk }]"
             :disabled="berserkBusy"
             :aria-pressed="!!state.berserk"
-            title="开启后按顺序循环换用备选席英雄，再点一次停止"
+            title="开启后约每 0.1 秒按顺序换一次备选席英雄，再点一次停止"
             @click="toggleBerserk"
           >
             <Flame :size="13" />{{ state.berserk ? "狂暴中" : "狂暴" }}
@@ -595,7 +598,7 @@ onUnmounted(() => {
           <Pencil :size="11" />记录
         </button>
         <button
-          title="复制本人 Riot ID 并打开 Hexdata 官方查分页"
+          title="复制本人 Riot ID 并打开 Hexdata 官方查分页；在该窗口查询后自动记录结果"
           @click="api.openExternal(state.summoner ? 'hexdata-copy' : 'hexdata')"
         >
           <Copy v-if="state.summoner" :size="11" />查分<ArrowUpRight

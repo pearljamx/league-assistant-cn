@@ -80,6 +80,7 @@ const preview: AssistantApi = {
   getUpdateState: unavailable,
   updateAction: unavailable,
   onUpdate: () => () => {},
+  onHexdataScore: () => () => {},
   getCompanionState: async () => ({
     ok: true,
     data: { championId: null, followingClient: true },

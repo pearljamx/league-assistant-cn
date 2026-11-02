@@ -602,6 +602,7 @@ const api = {
     return unavailable();
   },
   onUpdate: () => () => {},
+  onHexdataScore: () => () => {},
   openExternal: (target) => {
     toolCalls.push("open:" + target);
     return ok(undefined);

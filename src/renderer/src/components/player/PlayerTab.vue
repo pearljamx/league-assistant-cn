@@ -346,14 +346,24 @@ watch(
     if (id && !championOptions.value.includes(id)) filter.value.champion = 0;
   },
 );
+/** 在官方查分窗口查到当前玩家后，直接显示新记录。 */
+const sameId = (a: string, b: string) =>
+  a.replace(/\s*#\s*/g, "#").trim().toLowerCase() ===
+  b.replace(/\s*#\s*/g, "#").trim().toLowerCase();
+let stopHexdata = () => {};
 onMounted(() => {
   void loadPlayer();
   void loadExtras();
   void loadAugmentNames();
+  stopHexdata = api.onHexdataScore(({ riotId, score }) => {
+    if (props.target?.name && sameId(props.target.name, riotId) && rating.value)
+      rating.value = { ...rating.value, manual: score };
+  });
 });
 onUnmounted(() => {
   playerEpoch++;
   detailEpoch++;
+  stopHexdata();
 });
 </script>
 
@@ -507,12 +517,28 @@ onUnmounted(() => {
           <p v-if="!ranked.length">{{ errors.ranked || "暂无可显示的段位" }}</p>
         </div>
         <div class="hw-profile-position">
-          <span>海斗分 <small>Hexdata</small></span
+          <span
+            >海斗分 <small>Hexdata</small
+            ><button
+              v-if="target"
+              class="text-button hw-hexdata-open"
+              title="复制该玩家游戏 ID 并打开 Hexdata 官方查分页；在该窗口查询后自动记录结果"
+              @click="api.openExternal('hexdata-copy', target.name)"
+            >
+              官网查分
+            </button></span
           ><strong>{{
             rating?.status === "ready" && rating.score !== null
               ? rating.score.toLocaleString("zh-CN")
-              : "待接入"
+              : rating?.manual
+                ? rating.manual.score.toLocaleString("zh-CN")
+                : "未查询"
           }}</strong>
+          <small v-if="rating?.manual && rating.status !== 'ready'" class="hw-hexdata-note"
+            >{{ rating.manual.source === "official" ? "官网查询" : "手动记录" }}
+            {{ rating.manual.recordedAt.slice(0, 10)
+            }}{{ rating.manual.interval ? ` · ±${rating.manual.interval}` : "" }}</small
+          >
           <p
             v-if="
               rating?.aramhex?.status === 'ready' &&
@@ -969,6 +995,17 @@ onUnmounted(() => {
   font-size: 9px;
   color: var(--muted);
   margin-left: 4px;
+}
+.hw-hexdata-open {
+  margin-left: 8px;
+  font-size: 10px;
+}
+.hw-hexdata-note {
+  display: block;
+  clear: both;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--muted);
 }
 .hw-profile-position > strong {
   float: right;

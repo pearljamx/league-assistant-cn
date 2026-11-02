@@ -25,6 +25,7 @@ const api: AssistantApi = {
   getUpdateState: () => invoke("update-state"),
   updateAction: (action) => invoke("update-action", action),
   onUpdate: (callback) => subscribe("assistant:update", callback),
+  onHexdataScore: (callback) => subscribe("assistant:hexdata-score", callback),
   getCompanionState: () => invoke("companion-state"),
   selectCompanionChampion: (id) => invoke("companion-select", id),
   companionWindow: (action) => invoke("companion-window", action),
@@ -39,7 +40,7 @@ const api: AssistantApi = {
   applyRunes: (championId, query, index, expectedPerks) =>
     invoke("runes", championId, query, index, expectedPerks),
   getRating: (riotId) => invoke("rating", riotId),
-  openExternal: (target) => invoke("open", target),
+  openExternal: (target, riotId) => invoke("open", target, riotId),
   getRecognition: () => invoke("recognition"),
   scanAugments: () => invoke("scan"),
   setManualAugments: (ids) => invoke("manual", ids),

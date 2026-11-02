@@ -16,8 +16,8 @@ import type {
 } from "../shared/types";
 import type { Storage } from "./storage";
 
-/** 狂暴切换每次换用之间的间隔。 */
-export const BERSERK_INTERVAL_MS = 1500;
+/** 狂暴切换每次换用之间的间隔；上一次请求未完成时跳过本轮。 */
+export const BERSERK_INTERVAL_MS = 100;
 
 export const initialState = (): ConnectionState => ({
   status: "searching",
@@ -151,6 +151,9 @@ export class Client extends EventEmitter {
   private berserkOrder: number[] = [];
   private berserkFails = 0;
   private berserkBusy = false;
+  private berserkOkAt = 0;
+  /** 卡片阶段的本人卡片在一次选人中基本不变，缓存 3 秒以减少请求。 */
+  private berserkCards: { at: number; ids: number[] } | null = null;
   constructor(private storage: Storage) {
     super();
     const report = (message: string) => {
@@ -609,6 +612,8 @@ export class Client extends EventEmitter {
     if (this.berserkTimer) return true;
     this.berserkOrder = [];
     this.berserkFails = 0;
+    this.berserkOkAt = Date.now();
+    this.berserkCards = null;
     this.state.berserk = true;
     this.state.message = "狂暴切换已开启";
     this.berserkTimer = setInterval(
@@ -624,6 +629,11 @@ export class Client extends EventEmitter {
     this.berserkTimer = null;
     this.state.berserk = false;
   }
+  /**
+   * 快速路径：每轮只读一次会话、发一次交换，不走 chooseChampion 的两次重读，
+   * 才能做到约 0.1 秒一换。写入前仍核对阶段、账号、连接与开关。
+   * 失败不立即停止（客户端可能短暂拒绝过快的交换），连续 5 秒没有成功才停。
+   */
   private async berserkStep() {
     if (this.berserkBusy || this.choosingChampion || this.autoBusy) return;
     if (this.state.phase !== "ChampSelect") {
@@ -631,22 +641,61 @@ export class Client extends EventEmitter {
       return this.publish();
     }
     this.berserkBusy = true;
+    const owner = this.state.summoner?.puuid;
+    const credentials = this.credentials;
+    const same = () =>
+      this.berserkTimer !== null &&
+      this.state.phase === "ChampSelect" &&
+      this.state.status === "connected" &&
+      this.state.region === "TENCENT" &&
+      this.state.summoner?.puuid === owner &&
+      this.credentials === credentials;
     try {
-      const choices = await this.getChampionChoices();
+      const session = await this.request("/lol-champ-select/v1/session");
+      if (!same()) return;
+      let subset: number[] = [];
+      if (this.isSubsetPhase(session)) {
+        if (!this.berserkCards || Date.now() - this.berserkCards.at > 3000) {
+          const ids = await this.request<number[]>(
+            "/lol-lobby-team-builder/champ-select/v1/subset-champion-list",
+          ).catch(() => []);
+          this.berserkCards = {
+            at: Date.now(),
+            ids: Array.isArray(ids) ? ids : [],
+          };
+        }
+        subset = this.berserkCards.ids;
+      }
       // 卡片还没选时不替用户做选择，只在已有英雄后循环交换。
-      if (!this.berserkTimer || choices.kind !== "bench") return;
+      const choices = this.choicesFromSession(session, [], subset);
+      if (choices.kind !== "bench") return;
+      const current =
+        Number(
+          session.myTeam?.find(
+            (member: any) => member.cellId === session.localPlayerCellId,
+          )?.championId,
+        ) || null;
       const next = nextBerserkChampion(
         this.berserkOrder,
-        this.state.championId,
+        current,
         choices.championIds,
       );
-      if (!next) return;
-      await this.chooseChampion(next);
+      if (!next || !same()) return;
+      await this.request(
+        `/lol-champ-select/v1/session/bench/swap/${next}`,
+        "POST",
+      );
+      this.berserkOkAt = Date.now();
       this.berserkFails = 0;
     } catch {
-      if (++this.berserkFails >= 8 && this.berserkTimer) {
+      this.berserkFails++;
+      if (
+        this.berserkTimer &&
+        this.berserkFails >= 20 &&
+        Date.now() - this.berserkOkAt > 5000
+      ) {
         this.stopBerserk();
-        this.state.message = "狂暴切换连续失败，已自动停止";
+        this.state.message = "狂暴切换连续 5 秒失败，已自动停止";
         this.publish();
       }
     } finally {
