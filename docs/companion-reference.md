@@ -45,6 +45,8 @@ LeagueAkari 当前源码将 Mini Akari 辅助窗与 Champion Data 英雄资料�
 
 用户在本轮确认“目前只有国服使用许可”，尚不包含 Hexdata 第三方 API 接入，因而该数值分仍是明确的外部依赖。
 
+2026-11-02 复查：官网前端的查分请求为 `POST https://box.hexdata.com.cn/v1/public/match-report`（需登录）。不带登录直接请求返回 403 `web_lookup_only`，说明仅支持在官网查询、不支持机器人或脚本调用。因此助手不代发该请求（包括借用助手内官方窗口的登录态），改为：Mini 窗“查分”复制本人 Riot ID 并打开官方窗口，由用户自行粘贴查询；查到后可在 Mini 窗“记录”，只存本机，显示为“手动记录 月/日”。
+
 ### AramHex
 
 [官方查分页](https://aramhex.com/rank/)说明这是近 30 天采集对局推算的**区内前百分位**，各区分开，不是官方段位。[公开 rank.py](https://github.com/czgreat/aramhex/blob/main/lolhex/rank.py)有 `GET https://aramhex.com/api/rank?id=名字%23编号` 客户端逻辑；[cloud.py](https://github.com/czgreat/aramhex/blob/main/lolhex/cloud.py)提供 enabled/api/as_of 配置；[测试](https://github.com/czgreat/aramhex/blob/main/tests/test_cloud_rank.py)描述 `as_of`、`results[].region/top/band/games` 等格式。源码注释明确只返回前百分比、分组、近 30 天场数和日期，**不返回数值分数**。

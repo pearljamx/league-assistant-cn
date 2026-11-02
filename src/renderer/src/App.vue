@@ -4,6 +4,7 @@ import { CircleAlert, X } from "@lucide/vue";
 import { api } from "./api";
 import {
   acceptState,
+  acceptUpdate,
   page,
   refreshCatalog,
   settings,
@@ -37,6 +38,7 @@ onMounted(async () => {
     api.onState(acceptState),
     api.onSettings((value) => (settings.value = value)),
     api.onCloseRequest(() => (closeOpen.value = true)),
+    api.onUpdate(acceptUpdate),
   ];
   window.addEventListener("keydown", shortcut);
   const [currentState, currentSettings] = await Promise.all([
@@ -46,6 +48,8 @@ onMounted(async () => {
   if (currentSettings.ok && currentSettings.data)
     settings.value = currentSettings.data;
   if (currentState.ok && currentState.data) acceptState(currentState.data);
+  const update = await api.getUpdateState();
+  if (update.ok && update.data) acceptUpdate(update.data);
   void refreshCatalog();
 });
 onUnmounted(() => {

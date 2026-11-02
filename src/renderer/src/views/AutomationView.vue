@@ -86,6 +86,79 @@ const toggles = [
           <option :value="5000">5 秒</option>
         </select>
       </div>
+      <div class="setting-row">
+        <div>
+          <strong>自动匹配</strong>
+          <p>
+            你是房主时，进入组队大厅后延时开始匹配。手动取消匹配或拒绝确认回到大厅后，本轮不再自动排队。默认关闭。
+          </p>
+        </div>
+        <button
+          class="switch"
+          :class="{ on: settings.autoMatch }"
+          role="switch"
+          :aria-checked="!!settings.autoMatch"
+          aria-label="自动匹配"
+          @click="save({ autoMatch: !settings.autoMatch })"
+        >
+          <span></span>
+        </button>
+      </div>
+      <div class="setting-row">
+        <div>
+          <strong>匹配延迟</strong>
+          <p>倒计时期间可在 Mini 窗跳过本次。</p>
+        </div>
+        <select
+          aria-label="匹配延迟"
+          :value="settings.autoMatchDelayMs ?? 3000"
+          @change="
+            save({
+              autoMatchDelayMs: Number(
+                ($event.target as HTMLSelectElement).value,
+              ),
+            })
+          "
+        >
+          <option :value="1000">1 秒</option>
+          <option :value="3000">3 秒</option>
+          <option :value="5000">5 秒</option>
+          <option :value="10000">10 秒</option>
+          <option :value="20000">20 秒</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div>
+          <strong>结算时自动跳过点赞</strong>
+          <p>点赞投票出现约 1 秒后直接跳过，不给任何人点赞。默认关闭。</p>
+        </div>
+        <button
+          class="switch"
+          :class="{ on: settings.autoSkipHonor }"
+          role="switch"
+          :aria-checked="!!settings.autoSkipHonor"
+          aria-label="结算时自动跳过点赞"
+          @click="save({ autoSkipHonor: !settings.autoSkipHonor })"
+        >
+          <span></span>
+        </button>
+      </div>
+      <div class="setting-row">
+        <div>
+          <strong>结算后自动回到房间</strong>
+          <p>对局结算页出现后约 2 秒回到原房间，可与自动匹配组成连续排队。默认关闭。</p>
+        </div>
+        <button
+          class="switch"
+          :class="{ on: settings.autoPlayAgain }"
+          role="switch"
+          :aria-checked="!!settings.autoPlayAgain"
+          aria-label="结算后自动回到房间"
+          @click="save({ autoPlayAgain: !settings.autoPlayAgain })"
+        >
+          <span></span>
+        </button>
+      </div>
     </section>
     <section class="panel settings-panel">
       <div class="panel-heading">

@@ -29,13 +29,44 @@ try {
     await page.locator(".companion-shell").waitFor();
   }
   await expect(picker.locator(".mini-status")).toContainText("等待匹配");
-  await expect(picker.locator(".rating-line strong")).toHaveText("待接入");
+  await expect(picker.locator(".rating-line strong")).toHaveText("未记录");
   await expect(picker.locator(".quick-hero")).toHaveCount(0);
   await expect(picker.locator(".mini-swap")).toHaveCount(0);
   await expect(info.locator(".companion-empty")).toContainText("等待选择英雄");
   report.checks.push(
     "大厅阶段 Mini 窗只显示模式状态与自动接受，海斗分未接入，不出现换用",
   );
+  await picker.getByRole("button", { name: "开始匹配", exact: true }).click();
+  await expect(picker.locator(".mini-status")).toContainText("正在匹配对局");
+  await expect(picker.locator(".mini-status")).toContainText("预计 01:35");
+  await expect(picker.locator(".match-button.cancel")).toContainText("取消匹配");
+  await picker.screenshot({
+    path: "artifacts/screenshots/companion-matchmaking-fixture.png",
+  });
+  await picker.locator(".match-button.cancel").click();
+  await expect(picker.locator(".mini-status")).toContainText("组队大厅");
+  await expect
+    .poll(() => picker.evaluate(() => window.rendererFixture.matchCalls()))
+    .toEqual(["start", "cancel"]);
+  await picker.getByRole("switch", { name: "自动匹配", exact: true }).click();
+  await expect(
+    picker.getByRole("switch", { name: "自动匹配", exact: true }),
+  ).toHaveAttribute("aria-checked", "true");
+  await picker.getByRole("switch", { name: "自动匹配", exact: true }).click();
+  report.checks.push("Mini 窗开始/取消匹配只在用户点击时调用，自动匹配开关可切换");
+  await picker.getByRole("button", { name: "记录", exact: true }).click();
+  await picker.getByLabel("官网查到的海斗分").fill("1580");
+  await picker.getByLabel("官网查到的海斗分").press("Enter");
+  await expect(picker.locator(".rating-line strong")).toHaveText("1,580");
+  await expect(picker.locator(".rating-line small")).toContainText("手动记录");
+  await picker.getByRole("button", { name: /查分/ }).click();
+  await expect
+    .poll(() => picker.evaluate(() => window.rendererFixture.toolCalls()))
+    .toContain("open:hexdata-copy");
+  report.checks.push("海斗分只显示手动记录并标注，查分复制 Riot ID 打开官方页");
+  await picker.screenshot({
+    path: "artifacts/screenshots/companion-lobby-fixture.png",
+  });
   await picker.evaluate(() =>
     window.rendererFixture.state({ phase: "Matchmaking" }),
   );
@@ -144,6 +175,29 @@ try {
   report.checks.push(
     "点卡片头像一次即拿到英雄，英雄推荐窗默认显示带评级的海克斯推荐",
   );
+  await expect(picker.locator(".mini-current .balance-chip")).toHaveText([
+    "伤害 -5%",
+    "承伤 +5%",
+  ]);
+  await expect(info.locator(".companion-hero-heading .balance-chip")).toHaveCount(2);
+  await picker.locator(".stats-button").click();
+  await expect
+    .poll(() => picker.evaluate(() => window.rendererFixture.toolCalls()))
+    .toContain("team-stats:send");
+  await expect(picker.locator(".companion-success")).toContainText("已发送 1 名队友");
+  report.checks.push("选人阶段显示大乱斗平衡调整，发战绩按钮只在点击时调用");
+  await picker.locator(".berserk-button").click();
+  await expect(picker.locator(".berserk-button")).toHaveText("狂暴中");
+  await expect(picker.locator(".quick-hero").first()).toBeDisabled();
+  await picker.screenshot({
+    path: "artifacts/screenshots/companion-berserk-fixture.png",
+  });
+  await picker.locator(".berserk-button").click();
+  await expect(picker.locator(".berserk-button")).toHaveText("狂暴");
+  await expect
+    .poll(() => picker.evaluate(() => window.rendererFixture.matchCalls()))
+    .toEqual(["start", "cancel", "berserk:true", "berserk:false"]);
+  report.checks.push("选人阶段狂暴按钮开关由主进程执行，进行中禁用手动点头像");
   await info.getByRole("button", { name: "aramgg", exact: true }).click();
   await expect(info.locator(".aramgg-augment")).toHaveCount(4);
   await expect(info.locator(".aramgg-augment").first()).toContainText(
@@ -245,6 +299,8 @@ try {
       percentile: null,
       date: null,
       aramhex: undefined,
+      // 真实主进程按账号保存手动分数；新账号没有记录。
+      manual: null,
     });
     await window.rendererFixture.state({
       summoner: {
@@ -258,7 +314,7 @@ try {
     });
   });
   await picker.waitForTimeout(850);
-  await expect(picker.locator(".rating-line strong")).toHaveText("待接入");
+  await expect(picker.locator(".rating-line strong")).toHaveText("未记录");
   await expect(picker.locator(".rating-line")).not.toContainText("9,999");
   report.checks.push("账号切换清除评分，旧账号迟到结果不能恢复旧分数");
   await picker.screenshot({

@@ -124,3 +124,22 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 2026-10-29 用户要求两个小窗记住上次位置。Settings.companionPosition（DIP，主进程在窗口 moved 且本次 will-move 过时写入）；applyLayout 优先用 savedPosition（左上角需在某屏工作区内，否则退回贴靠）；设置“恢复自动贴靠”发送 companionPosition:null（渲染层只允许 null）。repositionCompanions 改为函数声明避免 TDZ。隔离实例验证：拖到 (300,200) 后重启仍在 (300,200)。
 - 2026-10-30 实时对局页按 LeagueAkari OngoingGamePanel 改版（对照其 OngoingGameTeam/PlayerInfoCard 源码）：两队上下排列，每队一行 5 张卡（窗口放不下时换行）；卡片为头像+等级、Riot ID、段位、英雄胜率、近期同模式胜率/KDA/本局 KDA、标签、常用英雄、独立滚动的近期战绩，预组队用彩色边框与角标。卡片改为 article，只有头部是打开玩家的按钮；战绩行暂不可点。每位公开玩家新增一次 getRanked，失败显示“段位暂不可用”，不当作未定级。隔离验证 npm run test:live（FIXTURE_LIVE_FULL=1 合成十人）；真实对局未复测。
 - 2026-10-30 用户要求推送并发布：v0.3.0 预发布 https://github.com/pearljamx/league-assistant-cn/releases/tag/v0.3.0，Release ID 428939062，标签 84975d2，CI 41045158378 通过。附件构建自 615f67b（到标签仅多 smoke-portable 等待时间）。便携启动通过但当时客户端未运行（disconnected）；安装烟测因已有正式安装主动拒绝，未执行。便携版首启解压约 39 秒，超过脚本原 30 秒上限，已放宽到 2 分钟，打包程序本身无问题。
+
+## 2026-11-02 Mini 窗匹配/狂暴/海斗分
+
+- 用户要求参考 Akari 给 Mini 窗加自动匹配并改布局、接入海斗分、选人弹窗加“狂暴”循环换英雄。
+- automation.ts 抽出通用 PhaseAction（阶段内延时执行一次，可回调计划时间），AutoAccept 继承；client.ts 用它实现 autoMatch（Lobby，key=pid:puuid:lobbyEpoch；从 Matchmaking/ReadyCheck 回大厅 lobbyEligible=false；在大厅里打开开关算新一轮）与 playAgain（EndOfGame 2 秒后 POST /lol-lobby/v2/play-again）。手动 matchmaking(start/cancel/skip)：start 先读 /lol-lobby/v2/lobby 校验房主/非自定义/canStartActivity，再 POST；cancel 为 DELETE /lol-lobby/v2/lobby/matchmaking/search。tick 中 Lobby 读 lobby → state.lobby，Matchmaking 读 /lol-matchmaking/v1/search → state.search；state.queueName 取 gameflow session 的 queue.description。
+- 狂暴：client.setBerserk，每 1.5 秒 getChampionChoices，kind 为 bench 时按 matchmaking.ts 的 nextBerserkChampion（首次出现顺序循环）调用 chooseChampion（沿用两次读会话校验）；卡片未选时不替用户选；进行中暂停自动抢备选席，Mini 头像禁用。
+- 海斗分调查：hexdata 前端调用 POST https://box.hexdata.com.cn/v1/public/match-report（登录 Bearer/Cookie），不带登录请求返回 403 web_lookup_only“仅支持在官网查询，不支持机器人或脚本调用”。据此不自动查询；open 新增 hexdata-copy（主进程剪贴板写本人 Riot ID 后打开官方窗），hexdata-score-save 把手动分数存 storage.cache 键 hexdata-manual-v1:{platform}:{puuid}，rating IPC 查询本人时附 manual。
+- Mini 新布局：状态卡（横排徽标 + 队列名 + 阶段 + 人数/房主或排队计时/预计）、全宽开始/取消匹配按钮、自动匹配倒计时与“本次跳过”、三格开关（自动接受/自动匹配/自动回房）、海斗分行（记录/查分）。主窗自动化页同步加自动匹配、匹配延迟、自动回房。
+- 注意：.berserk-button:hover 优先级高于 .on，需写 :not(.on):hover；fixture 的 updatedAt 为空，排队计时按收到 timeInQueue 的本机时间补齐。
+- 验证：typecheck；vitest 161 项（新增 tests/matchmaking.test.ts 13 项）；test:companions 15 项、test:renderer、test:history、test:live 的 errors 均为空。未在真实客户端做写入测试；自动匹配/回房/狂暴待用户实战验收。
+
+## 2026-11-02 跳过点赞/发战绩/平衡调整/在线更新
+
+- 用户：结算后自动跳过、不要点赞；要选人发战绩、大乱斗平衡调整提示、在线更新。
+- 跳过点赞：client.skipHonor（PhaseAction PreEndOfGame，1 秒，honorEpoch），先 POST /lol-honor-v2/v1/honor-player {honorCategory:"OPT_OUT",summonerId:0}，失败改 POST /lol-honor/v1/honor {honorType:"OPT_OUT"}；两个接口均参考 Akari/社区资料，未在真实客户端验证。
+- 发战绩：main/team-stats.ts（summarize 同模式有效对局、statsLine）；IPC team-stats(send|copy)：选人取 client.selection 队友（去掉本人），对局取 liveGame 双方（友/敌），history.history(puuid,0) 汇总，返回前核对账号/大区/阶段/会话。client.sendChampSelectChat 找 type=championSelect 会话逐行 POST，行间 400ms，每行发送前（等待之后）核对阶段——测试抓到先核对后等待会在离开选人后多发一条。
+- 平衡：providers/aram-balance.ts 拉 wiki 原始 Lua，先去注释，按两空格缩进的顶层条目取 id 与 ["aram"] 表；实测 134 个英雄有调整（202 为伤害 -5% 承伤 +5%）。shared/aram-balance.ts 转显示（承伤降低算增强、急速为加减值），BalanceChips.vue 用于 Mini 当前英雄、推荐窗标题；Mini 备选头像右上 ▲▼ 与 tooltip。
+- 更新：main/updater.ts，GitHub API releases?per_page=10，latestRelease 取最高版本非草稿，主机白名单 api.github.com/github.com/objects.githubusercontent.com/release-assets.githubusercontent.com；下载流式写 .part 同时 SHA-256，与 SHA256SUMS 不一致删除。启动 20 秒后与每 6 小时自动检查（autoCheckUpdate 默认开），启动时删除 local/updates。设置 → 关于有检查/下载/重启安装/发布页。实测 v0.3.0 发布可解析出安装包与 SHA256SUMS。现有 v0.3.0 不含更新器，用户需手动装一次含此功能的版本。
+- 验证：vitest 170 项（新增 tests/v04-features.test.ts 9 项）；test:companions（新增平衡标签、发战绩）、test:renderer、test:history、test:live 均无错误；设置页更新区截图 artifacts/screenshots/settings-update-fixture.png。真实客户端未做写入测试；静默安装流程未实测（需要真正的新版本发布）。

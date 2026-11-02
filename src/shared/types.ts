@@ -55,6 +55,30 @@ export interface ConnectionState {
   ranked: RankedEntry[];
   championId: number | null;
   updatedAt: string;
+  /** 客户端显示的队列名称（如“海克斯大乱斗”），读不到为空。 */
+  queueName?: string | null;
+  /** 组队大厅里本人能否开始匹配，仅 Lobby 阶段有值。 */
+  lobby?: LobbyInfo | null;
+  /** 排队计时，仅 Matchmaking 阶段有值。 */
+  search?: MatchSearch | null;
+  /** 自动匹配计划开始的时间（毫秒时间戳），未计划为空。 */
+  autoMatchAt?: number | null;
+  /** 选人狂暴切换是否进行中（仅本次选人有效）。 */
+  berserk?: boolean;
+}
+export interface LobbyInfo {
+  leader: boolean;
+  members: number;
+  custom: boolean;
+  canStart: boolean;
+  /** 不能开始时的原因。 */
+  reason: string | null;
+}
+export interface MatchSearch {
+  timeInQueue: number | null;
+  estimated: number | null;
+  /** 秒退等惩罚剩余秒数。 */
+  penalty: number | null;
 }
 export interface SourceInfo {
   id: "tencent" | "aramhex" | "aramgg";
@@ -379,6 +403,15 @@ export interface Settings {
   hexSource?: "aramgg" | "aramhex";
   /** 自动选人/禁用/抢备选席，全部默认关闭。 */
   autoSelect?: AutoSelectSettings;
+  /** 本人为房主时，进入组队大厅后延时自动开始匹配。默认关闭。 */
+  autoMatch?: boolean;
+  autoMatchDelayMs?: number;
+  /** 对局结算后自动回到房间。默认关闭。 */
+  autoPlayAgain?: boolean;
+  /** 结算点赞阶段自动跳过（不给任何人点赞）。默认关闭。 */
+  autoSkipHonor?: boolean;
+  /** 启动后与每 6 小时检查一次新版本。默认开启，只读取 GitHub 发布信息。 */
+  autoCheckUpdate?: boolean;
   managedRunePage: { id: number; puuid: string } | null;
 }
 export interface AutoSelectSettings {
@@ -428,6 +461,48 @@ export interface SkillRating {
   message: string;
   url: string;
   aramhex?: AramHexSkillPosition;
+  /** 用户在 Hexdata 官网查到后手动记录的本人海斗分（只存本机）。 */
+  manual?: HexdataManualScore | null;
+}
+/** 大乱斗英雄平衡调整（倍率，1 表示无调整）。 */
+export interface AramBalance {
+  championId: number;
+  /** 键为调整项：dmg_dealt、dmg_taken、healing、shielding 等。 */
+  modifiers: Record<string, number>;
+}
+export interface AramBalanceTable {
+  champions: Record<number, Record<string, number>>;
+  source: string;
+  license: string;
+  fetchedAt: string | null;
+  stale: boolean;
+}
+export type UpdateStatus =
+  | "idle"
+  | "checking"
+  | "none"
+  | "available"
+  | "downloading"
+  | "ready"
+  | "error";
+export interface UpdateState {
+  status: UpdateStatus;
+  current: string;
+  latest: string | null;
+  publishedAt: string | null;
+  notes: string | null;
+  /** 发布页地址（便携版手动下载）。 */
+  pageUrl: string | null;
+  /** 下载进度 0–1。 */
+  progress: number | null;
+  /** 便携版或开发版不能自动安装。 */
+  installable: boolean;
+  message: string;
+  checkedAt: string | null;
+}
+export interface HexdataManualScore {
+  score: number;
+  recordedAt: string;
 }
 export interface Recognition {
   gameWindow?: { x: number; y: number; width: number; height: number };
@@ -466,6 +541,21 @@ export interface AssistantApi {
   getLiveGame(): Promise<Result<LiveGame>>;
   getChampionChoices(): Promise<Result<ChampionChoices>>;
   chooseChampion(championId: number): Promise<Result<void>>;
+  /** 用户点击：开始/取消匹配，或跳过本次自动匹配。 */
+  matchmaking(action: "start" | "cancel" | "skip"): Promise<Result<void>>;
+  /** 选人狂暴切换：开启后按顺序循环换用备选席英雄。 */
+  setBerserk(enabled: boolean): Promise<Result<boolean>>;
+  /** 队友（选人）或双方（对局中）近期同模式战绩：send 发到选人聊天，copy 复制到剪贴板。 */
+  teamStats(action: "send" | "copy"): Promise<Result<{ lines: string[] }>>;
+  getAramBalance(): Promise<Result<AramBalanceTable>>;
+  getUpdateState(): Promise<Result<UpdateState>>;
+  updateAction(
+    action: "check" | "download" | "install" | "page",
+  ): Promise<Result<UpdateState>>;
+  onUpdate(callback: (state: UpdateState) => void): () => void;
+  saveHexdataScore(
+    score: number | null,
+  ): Promise<Result<HexdataManualScore | null>>;
   getCompanionState(): Promise<Result<CompanionState>>;
   selectCompanionChampion(
     championId: number | null,
@@ -492,7 +582,12 @@ export interface AssistantApi {
   ): Promise<Result<{ pageId: number }>>;
   getRating(riotId?: string): Promise<Result<SkillRating>>;
   openExternal(
-    target: "hexdata" | "github" | "data-license" | "aramgg-developer",
+    target:
+      | "hexdata"
+      | "hexdata-copy"
+      | "github"
+      | "data-license"
+      | "aramgg-developer",
   ): Promise<Result<void>>;
   getRecognition(): Promise<Result<Recognition>>;
   scanAugments(): Promise<Result<Recognition>>;

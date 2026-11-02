@@ -15,7 +15,15 @@ import {
 import { api } from "../api";
 import BrandMark from "./BrandMark.vue";
 import brandArt from "../assets/brand-art.jpg";
-import { notify, openPlayer, save, settings, state } from "../store";
+import {
+  acceptUpdate,
+  notify,
+  openPlayer,
+  save,
+  settings,
+  state,
+  updateState,
+} from "../store";
 import { date, playerTagNames } from "../format";
 import type {
   AramggStatus,
@@ -84,6 +92,16 @@ async function saveKey(clear = false) {
     );
   } else keyError.value = result.error || "保存失败";
 }
+const updateBusy = ref(false);
+async function runUpdate(action: "check" | "download" | "install" | "page") {
+  updateBusy.value = true;
+  const result = await api.updateAction(action);
+  updateBusy.value = false;
+  if (result.ok && result.data) acceptUpdate(result.data);
+  else notify(result.error || "更新操作失败");
+}
+const updateDate = (value: string | null) =>
+  value ? new Date(value).toLocaleDateString("zh-CN") : "";
 onMounted(async () => {
   void loadNotes();
   void loadAramgg();
@@ -490,6 +508,88 @@ onMounted(async () => {
               >
             </div>
           </div>
+          <div class="setting-row update-row">
+            <div>
+              <strong
+                >在线更新
+                <small v-if="updateState?.latest"
+                  >最新 v{{ updateState.latest }}
+                  {{ updateDate(updateState.publishedAt) }}</small
+                ></strong
+              >
+              <p>
+                {{ updateState?.message || "尚未检查更新" }}
+              </p>
+              <div
+                v-if="updateState?.status === 'downloading'"
+                class="update-progress"
+              >
+                <span
+                  :style="{
+                    width: Math.round((updateState.progress ?? 0) * 100) + '%',
+                  }"
+                ></span>
+              </div>
+              <p class="update-hint">
+                从 GitHub 发布页下载安装包，按同一发布的 SHA256SUMS
+                校验后静默安装并自动重启；设置与数据保留。便携版需手动下载。
+              </p>
+            </div>
+            <div class="update-actions">
+              <button
+                v-if="updateState?.status === 'ready'"
+                class="button primary"
+                @click="runUpdate('install')"
+              >
+                重启并安装
+              </button>
+              <button
+                v-else-if="
+                  updateState?.status === 'available' && updateState.installable
+                "
+                class="button primary"
+                :disabled="updateBusy"
+                @click="runUpdate('download')"
+              >
+                下载更新
+              </button>
+              <button
+                v-else
+                class="button secondary"
+                :disabled="
+                  updateBusy ||
+                  updateState?.status === 'checking' ||
+                  updateState?.status === 'downloading'
+                "
+                @click="runUpdate('check')"
+              >
+                检查更新
+              </button>
+              <button
+                v-if="updateState?.pageUrl"
+                class="text-button"
+                @click="runUpdate('page')"
+              >
+                发布页<ArrowUpRight :size="14" />
+              </button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div>
+              <strong>自动检查更新</strong>
+              <p>启动后与每 6 小时读取一次 GitHub 发布信息，只提示，不自动安装。</p>
+            </div>
+            <button
+              class="switch"
+              :class="{ on: settings.autoCheckUpdate !== false }"
+              role="switch"
+              :aria-checked="settings.autoCheckUpdate !== false"
+              aria-label="自动检查更新"
+              @click="save({ autoCheckUpdate: settings.autoCheckUpdate === false })"
+            >
+              <span></span>
+            </button>
+          </div>
           <div class="setting-row">
             <div>
               <strong>项目主页</strong>
@@ -505,16 +605,53 @@ onMounted(async () => {
               <p>
                 界面参考 LeagueAkari；国服统计来自腾讯 101 与 AramHex（CC BY-NC
                 4.0）；海克斯全球样本来自
-                aramgg.com，经太农海克斯助手数据包分发；强化图标来自本机客户端。
+                aramgg.com，经太农海克斯助手数据包分发；强化图标来自本机客户端；大乱斗平衡调整来自
+                League of Legends Wiki（CC BY-SA 3.0）。
               </p>
             </div>
           </div>
           <p class="settings-disclaimer">
             本项目不隶属于腾讯或 Riot
-            Games，不代表其观点。助手不读取游戏内存、不注入或修改游戏程序，不代为发起排队。
+            Games，不代表其观点。助手不读取游戏内存、不注入或修改游戏程序；自动匹配等自动操作只在你开启后执行。
           </p>
         </template>
       </div>
     </section>
   </div>
 </template>
+
+<style scoped>
+.update-row {
+  align-items: flex-start;
+}
+.update-row strong small {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.update-progress {
+  height: 4px;
+  margin: 6px 0;
+  border-radius: 2px;
+  background: #ffffff12;
+  overflow: hidden;
+}
+.update-progress span {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+  transition: width 0.2s;
+}
+.update-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+.update-actions {
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+</style>

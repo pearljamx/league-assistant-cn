@@ -22,7 +22,11 @@
 - 客户端小窗：#champion-picker 为 Mini 窗（客户端连接即显示），#champion-info 为仅选人阶段的「英雄推荐」窗（海克斯模式默认显示带评级的强化推荐）；两窗可拖边缘调整大小，尺寸和拖动后的位置都会记住（位置不在任何屏幕内时退回贴靠，设置可恢复自动贴靠），自动出现不抢焦点，进入游戏/断线隐藏。备选席与本人英雄卡片合并显示，点头像即直接换：卡片阶段点卡片即完成选择，备选席直接交换，队友留下的英雄在卡片阶段只显示“稍后可换”；峡谷本人回合只预选不锁定；右键只查看。不在真实客户端做自动测试写。
 - 自动选人/禁用/抢备选席与自动锁定全部默认关闭；只处理本人进行中的回合，不覆盖用户自己预选的英雄，写入前重读会话，每步只尝试一次。工具集操作只在用户点击时执行。不在真实客户端自动测试这些写操作，用 tests/auto-select、tests/toolkit 与隔离 fixture 验证。
 - 实时/历史玩家详情仅按公开 PUUID 或完整 Riot ID 查询；不得按英雄或位置猜身份。实时列表、资料和评分的返回都核对账号/大区/阶段，旧请求不得回滚新选择。
-- Hexdata 直连等待正式接入资料；目前只提供其官方查询入口，不用其他来源的分数替代。
+- Hexdata 直连等待正式接入资料；其 match-report 接口对脚本返回 403 web_lookup_only，不得借登录态、Cookie 或页面注入代查。只提供官方查询窗（复制本人 Riot ID）与本机手动记录（标注“手动记录”与日期），不用其他来源的分数替代。
+- 自动匹配/结算自动回房默认关闭；自动匹配只在本人为房主的大厅、每轮进入大厅尝试一次，取消匹配或拒绝确认回到大厅不自动再排。狂暴切换仅大乱斗备选席、用户开启，离开选人/断线/换号即停，连续失败 8 次自动停止。
+- 结算跳过点赞默认关闭，只提交 OPT_OUT，从不替用户点赞。选人发战绩只发到 championSelect 会话（本队可见）、用户点击才发；对局中只复制，不模拟键盘发游戏内聊天。
+- 大乱斗平衡调整来自 League of Legends Wiki Module:ChampionData（CC BY-SA 3.0，需署名），12 小时缓存，解析少于 100 英雄拒绝使用。
+- 在线更新读 GitHub Releases（含预发布），安装包须按同一发布 SHA256SUMS 校验后才可静默安装（--updated /S --force-run）；便携版/开发版只提示。发布必须继续上传 Setup.exe 与 SHA256SUMS，资产名格式不能改。
 - AramHex 数据 CC BY-NC 4.0，代码 MIT，许可分开；不将 Hexdata 分数直接映射到 AramHex 分组。
 - 海克斯数据默认 aramgg 官方数据 API（hexSource 默认 aramgg，AramHex 为可选来源与回退）；顺序/分级标明来自腾讯国服，胜率标明为 aramgg 全球样本，不足 255 场留空。API Key 只经设置写入，safeStorage 加密存于 local/aramgg-key.bin，只在主进程使用；不得硬编码、写入日志、发给渲染进程、提交 Git 或打包。同一 dataVersion 每个资源只请求一次以节省额度。
 - 默认读 PEARLJAM HEX 公共数据（无需 Key）：国内镜像 CHINA_MIRROR → GitHub aramgg-data 分支 → 本机缓存 → 个人 Key → AramHex；清单与文件按固定文件名和 SHA-256 校验。同步由 scripts/sync-aramgg.ts + .github/workflows/aramgg-sync.yml 完成（Secret ARAMGG_API_KEY，变量 ARAMGG_PUBLISH 默认关闭，镜像走 S3 兼容 Secret），额度不足按未同步/最旧优先轮转，旧版本英雄须标明。2026-10-29 用户表示 aramgg 授权由其自行判断，不再提醒。详见 docs/public-data.md。

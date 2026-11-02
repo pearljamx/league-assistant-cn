@@ -8,7 +8,13 @@ import {
   ref,
   watch,
 } from "vue";
-import { Radio, RefreshCw, Users } from "@lucide/vue";
+import {
+  ClipboardCopy,
+  MessageSquareText,
+  Radio,
+  RefreshCw,
+  Users,
+} from "@lucide/vue";
 import { api, unwrap } from "../api";
 import {
   browseHero,
@@ -406,6 +412,24 @@ function resetTeam() {
   notes.value = {};
   encounters.value = {};
 }
+/** 近期战绩：选人阶段可发到选人聊天（只有本队可见），对局中只能复制双方。 */
+const statsBusy = ref(false);
+async function teamStats(action: "send" | "copy") {
+  if (statsBusy.value) return;
+  statsBusy.value = true;
+  try {
+    const result = await unwrap(api.teamStats(action));
+    notify(
+      action === "send"
+        ? `已发送 ${result.lines.length} 名队友的近期战绩到选人聊天`
+        : `已复制 ${result.lines.length} 名玩家的近期战绩`,
+    );
+  } catch (reason) {
+    notify((reason as Error).message);
+  } finally {
+    statsBusy.value = false;
+  }
+}
 function refresh() {
   resetTeam();
   void loadLive();
@@ -488,6 +512,24 @@ defineExpose({ refresh });
         }}</span
         ><small>每 5 秒更新</small>
       </div>
+      <button
+        v-if="live?.status === 'selection'"
+        class="button secondary"
+        :disabled="statsBusy"
+        title="把队友近期同模式战绩发到选人聊天（只有本队可见）"
+        @click="teamStats('send')"
+      >
+        <MessageSquareText :size="15" />发到聊天
+      </button>
+      <button
+        v-if="live?.status === 'selection' || live?.status === 'live'"
+        class="button secondary"
+        :disabled="statsBusy"
+        title="复制近期同模式战绩，可粘贴到游戏内聊天"
+        @click="teamStats('copy')"
+      >
+        <ClipboardCopy :size="15" />复制战绩
+      </button>
       <button
         class="button secondary"
         aria-label="刷新实时对局"

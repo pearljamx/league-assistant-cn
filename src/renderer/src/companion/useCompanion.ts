@@ -1,6 +1,8 @@
 import { computed, ref } from "vue";
 import { api, unwrap } from "../api";
+import { balanceChips } from "../../../shared/aram-balance";
 import type {
+  AramBalanceTable,
   Catalog,
   CompanionState,
   ConnectionState,
@@ -48,6 +50,22 @@ export const catalog = ref<Catalog>({
 });
 export const overview = ref<Overview | null>(null);
 export const rating = ref<SkillRating | null>(null);
+/** 大乱斗平衡调整表（League of Legends Wiki），只在大乱斗/海克斯模式读取一次。 */
+export const balance = ref<AramBalanceTable | null>(null);
+let balanceRequested = false;
+export async function loadBalance() {
+  if (balanceRequested) return;
+  balanceRequested = true;
+  try {
+    balance.value = await unwrap(api.getAramBalance());
+  } catch {
+    balanceRequested = false; /* 失败不显示调整，下次进入大乱斗再试 */
+  }
+}
+export const chipsFor = (id: number | null | undefined) =>
+  state.value.mode === "rift" || !id
+    ? []
+    : balanceChips(balance.value?.champions[id]);
 export const error = ref("");
 export const message = ref("");
 export const loadingCatalog = ref(false);
@@ -159,6 +177,7 @@ export function startCompanion(
       previous.platform !== value.platform ||
       previous.status !== value.status;
     state.value = value;
+    if (value.mode !== "rift") void loadBalance();
     if (account) {
       ratingEpoch++;
       rating.value = null;

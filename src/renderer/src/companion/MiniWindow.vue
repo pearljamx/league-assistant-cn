@@ -2,17 +2,28 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   ArrowUpRight,
+  Check,
+  Copy,
+  Flame,
   Hexagon,
+  MessageSquareText,
+  Pencil,
+  Play,
   Radio,
   RefreshCw,
   Search,
+  Square,
   X,
 } from "@lucide/vue";
 import { api, unwrap } from "../api";
 import ChampionIcon from "../components/ChampionIcon.vue";
 import BrandMark from "../components/BrandMark.vue";
+import BalanceChips from "../components/BalanceChips.vue";
+import { balanceTrend } from "../../../shared/aram-balance";
 import {
   act,
+  balance,
+  chipsFor,
   companion,
   error,
   heroes,
@@ -46,17 +57,30 @@ let poll: ReturnType<typeof setInterval> | undefined,
 let stop = () => {};
 
 const connected = computed(() => state.value.status === "connected");
+const clock2 = (total: number) =>
+  `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 const inRoom = computed(() =>
   ["Lobby", "Matchmaking", "ReadyCheck", "ChampSelect"].includes(
     state.value.phase,
   ),
 );
+/** 排队时间优先用客户端的 timeInQueue，两次刷新之间按收到它的本机时间补齐。 */
+const searchAt = ref(Date.now());
+watch(
+  () => state.value.search?.timeInQueue,
+  () => (searchAt.value = Date.now()),
+);
 const waited = computed(() => {
-  const seconds = Math.max(
-    0,
-    Math.floor((now.value - phaseSince.value) / 1000),
-  );
-  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const queued = state.value.search?.timeInQueue;
+  const base =
+    queued != null
+      ? queued + Math.max(0, (now.value - searchAt.value) / 1000)
+      : (now.value - phaseSince.value) / 1000;
+  return clock2(Math.max(0, Math.floor(base)));
+});
+const estimated = computed(() => {
+  const value = state.value.search?.estimated;
+  return value ? clock2(value) : null;
 });
 const status = computed(() => {
   if (!connected.value)
@@ -67,12 +91,16 @@ const status = computed(() => {
     case "Lobby":
       return {
         title: "组队大厅 · 等待匹配",
-        detail: "进入队列后自动同步匹配与选人状态",
+        detail: state.value.lobby
+          ? `${state.value.lobby.members} 人房间 · ${state.value.lobby.leader ? "你是房主" : "等待房主开始"}`
+          : "可以开始匹配",
       };
     case "Matchmaking":
       return {
         title: "正在匹配对局",
-        detail: `已等待 ${waited.value}（本机计时）`,
+        detail: estimated.value
+          ? `已等待 ${waited.value} · 预计 ${estimated.value}`
+          : `已等待 ${waited.value}`,
       };
     case "ReadyCheck":
       return {
@@ -136,7 +164,29 @@ const tip = (id: number) =>
     ? " · 点击换用"
     : waiting.value.has(id)
       ? " · 选人结束后可换"
-      : " · 暂不可换");
+      : " · 暂不可换") +
+  (chipsFor(id).length
+    ? "\n大乱斗调整：" + chipsFor(id).map((chip) => chip.text).join("，")
+    : "");
+const trend = (id: number) => balanceTrend(chipsFor(id));
+/** 把队友近期同模式战绩发到选人聊天（只有本队可见）。 */
+const statsBusy = ref(false);
+async function sendStats() {
+  if (statsBusy.value) return;
+  statsBusy.value = true;
+  error.value = "";
+  message.value = "";
+  const context = sessionContext();
+  try {
+    const result = await unwrap(api.teamStats("send"));
+    if (context === sessionContext())
+      message.value = `已发送 ${result.lines.length} 名队友的近期战绩到选人聊天`;
+  } catch (e) {
+    if (context === sessionContext()) error.value = (e as Error).message;
+  } finally {
+    statsBusy.value = false;
+  }
+}
 async function refreshChoices() {
   const version = ++selectionEpoch;
   if (state.value.phase !== "ChampSelect") {
@@ -182,11 +232,110 @@ async function choose(id: number) {
     pending.value = null;
   }
 }
+/** 匹配按钮：大厅里开始（仅房主），匹配中取消；其余阶段不可用。 */
+const matchBusy = ref(false);
+const matchButton = computed(() => {
+  const phase = state.value.phase;
+  if (!connected.value)
+    return { action: null, label: "等待客户端", hint: "" } as const;
+  if (phase === "Lobby") {
+    const lobby = state.value.lobby;
+    return {
+      action: lobby && !lobby.canStart ? null : ("start" as const),
+      label: "开始匹配",
+      hint: lobby?.reason ?? "",
+    };
+  }
+  if (phase === "Matchmaking")
+    return {
+      action: "cancel" as const,
+      label: `取消匹配 · ${waited.value}`,
+      hint: state.value.search?.penalty
+        ? `排队惩罚剩余 ${clock2(state.value.search.penalty)}`
+        : "",
+    };
+  if (phase === "ReadyCheck")
+    return { action: null, label: "对局已找到", hint: "" } as const;
+  return { action: null, label: "进入房间后可匹配", hint: "" } as const;
+});
+const autoMatchIn = computed(() => {
+  const at = state.value.autoMatchAt;
+  return at && state.value.phase === "Lobby"
+    ? Math.max(0, Math.ceil((at - now.value) / 1000))
+    : null;
+});
+async function runMatch(action: "start" | "cancel" | "skip") {
+  if (matchBusy.value) return;
+  matchBusy.value = true;
+  error.value = "";
+  try {
+    await unwrap(api.matchmaking(action));
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    matchBusy.value = false;
+  }
+}
+/** 狂暴切换只在大乱斗备选席可用；主进程负责循环与停止。 */
+const berserkBusy = ref(false);
+const canBerserk = computed(
+  () => state.value.phase === "ChampSelect" && state.value.mode !== "rift",
+);
+async function toggleBerserk() {
+  if (berserkBusy.value) return;
+  berserkBusy.value = true;
+  error.value = "";
+  try {
+    await unwrap(api.setBerserk(!state.value.berserk));
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    berserkBusy.value = false;
+  }
+}
+/** 海斗分：Hexdata 不允许脚本查询，只显示用户在官网查到后手动记录的分数。 */
+const manual = computed(() => rating.value?.manual ?? null);
 const ratingText = computed(() =>
   rating.value?.status === "ready" && rating.value.score !== null
     ? rating.value.score.toLocaleString("zh-CN")
-    : "待接入",
+    : manual.value
+      ? manual.value.score.toLocaleString("zh-CN")
+      : "未记录",
 );
+const ratingNote = computed(() => {
+  const ready = rating.value?.status === "ready" && rating.value.score !== null;
+  const position = rating.value?.aramhex;
+  if (!ready && manual.value) {
+    const date = new Date(manual.value.recordedAt);
+    return `手动记录 ${date.getMonth() + 1}/${date.getDate()}`;
+  }
+  if (position?.status === "ready" && position.percentile !== null)
+    return `AramHex 区内前 ${(position.percentile * 100).toFixed(1)}%`;
+  return ready ? "Hexdata" : "Hexdata 官网查询";
+});
+const editing = ref(false);
+const draft = ref("");
+function startEdit() {
+  draft.value = manual.value ? String(manual.value.score) : "";
+  editing.value = true;
+}
+async function saveScore(clear = false) {
+  const text = draft.value.trim();
+  const score = clear || !text ? null : Number(text);
+  if (score !== null && (!Number.isInteger(score) || score < 0 || score > 10000)) {
+    error.value = "请输入 0–10000 的整数海斗分";
+    return;
+  }
+  const context = sessionContext();
+  try {
+    const saved = await unwrap(api.saveHexdataScore(score));
+    if (context === sessionContext() && rating.value)
+      rating.value = { ...rating.value, manual: saved };
+    editing.value = false;
+  } catch (e) {
+    error.value = (e as Error).message;
+  }
+}
 watch(
   () => `${state.value.mode}:${settings.value.band}:${settings.value.tier}`,
   () => void loadOverview(),
@@ -194,6 +343,7 @@ watch(
 onMounted(() => {
   stop = startCompanion(
     (_account, previous) => {
+      if (_account) editing.value = false;
       if (previous.phase !== state.value.phase) {
         phaseSince.value = Date.now();
         search.value = "";
@@ -246,16 +396,40 @@ onUnmounted(() => {
         <div class="mini-current">
           <ChampionIcon :champion="current" :size="52" />
           <div>
-            <small>{{ modeName }} · 英雄选择</small>
+            <small>{{ state.queueName || modeName }} · 英雄选择</small>
             <strong>{{ current?.name || "尚未选择英雄" }}</strong>
             <span
               >统计胜率
               {{ percent(stats.get(state.championId || 0)?.winRate) }}</span
             >
+            <BalanceChips
+              :chips="chipsFor(state.championId)"
+              :source="balance?.source"
+            />
           </div>
         </div>
         <div class="mini-choices-head">
           <span>{{ heading }}</span>
+          <button
+            class="stats-button"
+            :disabled="statsBusy"
+            title="把队友近期同模式战绩发到选人聊天（只有本队可见）"
+            @click="sendStats"
+          >
+            <MessageSquareText :size="13" />{{
+              statsBusy ? "汇总中" : "发战绩"
+            }}
+          </button>
+          <button
+            v-if="canBerserk"
+            :class="['berserk-button', { on: state.berserk }]"
+            :disabled="berserkBusy"
+            :aria-pressed="!!state.berserk"
+            title="开启后按顺序循环换用备选席英雄，再点一次停止"
+            @click="toggleBerserk"
+          >
+            <Flame :size="13" />{{ state.berserk ? "狂暴中" : "狂暴" }}
+          </button>
         </div>
         <div v-if="choices.kind === 'pick'" class="mini-search">
           <Search :size="13" /><input
@@ -278,7 +452,7 @@ onUnmounted(() => {
                 waiting: !canChoose(id) && waiting.has(id),
               },
             ]"
-            :disabled="choosing"
+            :disabled="choosing || !!state.berserk"
             :aria-disabled="!canChoose(id)"
             :aria-label="'换用' + (heroes.get(id)?.name || id)"
             :title="tip(id)"
@@ -289,6 +463,10 @@ onUnmounted(() => {
               v-if="cards.has(id)"
               class="card-badge"
               >卡片</i
+            ><i
+              v-if="trend(id)"
+              :class="['trend-badge', trend(id) > 0 ? 'buff' : 'nerf']"
+              >{{ trend(id) > 0 ? "▲" : "▼" }}</i
             ><small>{{
               !canChoose(id) && waiting.has(id)
                 ? "稍后可换"
@@ -299,56 +477,132 @@ onUnmounted(() => {
         </div>
         <p v-else class="mini-reason">{{ choices.reason }}</p>
       </section>
-      <section v-else class="mini-status">
-        <div :class="['mini-emblem', { live: inRoom }]">
-          <Hexagon v-if="state.mode === 'hex' && inRoom" :size="30" /><Radio
-            v-else
-            :size="28"
-          />
-        </div>
-        <strong class="mini-mode">{{
-          inRoom
-            ? modeName
-            : state.summoner
-              ? state.summoner.gameName
-              : "PEARLJAM HEX"
-        }}</strong>
-        <span :class="['mini-phase', state.phase]">{{ status.title }}</span>
-        <small>{{ status.detail }}</small>
-      </section>
+      <template v-else>
+        <section class="mini-status">
+          <div :class="['mini-emblem', state.phase, { live: inRoom }]">
+            <Hexagon v-if="state.mode === 'hex' && inRoom" :size="24" /><Radio
+              v-else
+              :size="22"
+            />
+          </div>
+          <div class="mini-status-text">
+            <strong class="mini-mode">{{
+              inRoom
+                ? state.queueName || modeName
+                : state.summoner
+                  ? state.summoner.gameName
+                  : "PEARLJAM HEX"
+            }}</strong>
+            <span :class="['mini-phase', state.phase]">{{ status.title }}</span>
+            <small>{{ status.detail }}</small>
+          </div>
+        </section>
+        <section class="mini-match">
+          <button
+            :class="[
+              'match-button',
+              { cancel: matchButton.action === 'cancel' },
+            ]"
+            :disabled="!matchButton.action || matchBusy"
+            @click="matchButton.action && runMatch(matchButton.action)"
+          >
+            <Square v-if="matchButton.action === 'cancel'" :size="14" /><Play
+              v-else
+              :size="14"
+            />{{ matchButton.label }}
+          </button>
+          <p v-if="autoMatchIn !== null" class="match-hint auto">
+            {{ autoMatchIn }} 秒后自动开始匹配
+            <button @click="runMatch('skip')">本次跳过</button>
+          </p>
+          <p v-else-if="matchButton.hint" class="match-hint">
+            {{ matchButton.hint }}
+          </p>
+        </section>
+      </template>
       <p v-if="error" class="companion-notice" role="alert">{{ error }}</p>
       <p v-else-if="message" class="companion-success" role="status">
         {{ message }}
       </p>
     </main>
 
-    <section class="mini-ops">
-      <span
-        >自动接受<small>（{{ settings.acceptDelayMs / 1000 }} 秒）</small></span
-      >
+    <section class="mini-ops" aria-label="自动操作">
       <button
-        :class="['switch', { on: settings.autoAccept }]"
+        :class="['op-tile', { on: settings.autoAccept }]"
         role="switch"
         :aria-checked="settings.autoAccept"
         aria-label="自动接受对局"
         @click="save({ autoAccept: !settings.autoAccept })"
       >
-        <span></span>
+        <span>自动接受</span
+        ><small>{{ settings.acceptDelayMs / 1000 }} 秒</small
+        ><i class="switch" :class="{ on: settings.autoAccept }"><span></span></i>
+      </button>
+      <button
+        :class="['op-tile', { on: settings.autoMatch }]"
+        role="switch"
+        :aria-checked="!!settings.autoMatch"
+        aria-label="自动匹配"
+        title="本人为房主时，进入大厅后延时开始匹配；手动取消后本轮不再自动排队"
+        @click="save({ autoMatch: !settings.autoMatch })"
+      >
+        <span>自动匹配</span
+        ><small>{{ (settings.autoMatchDelayMs ?? 3000) / 1000 }} 秒</small
+        ><i class="switch" :class="{ on: settings.autoMatch }"><span></span></i>
+      </button>
+      <button
+        :class="['op-tile', { on: settings.autoPlayAgain }]"
+        role="switch"
+        :aria-checked="!!settings.autoPlayAgain"
+        aria-label="结算后自动回到房间"
+        @click="save({ autoPlayAgain: !settings.autoPlayAgain })"
+      >
+        <span>自动回房</span><small>结算后</small
+        ><i class="switch" :class="{ on: settings.autoPlayAgain }"
+          ><span></span
+        ></i>
       </button>
     </section>
     <footer class="rating-line" aria-label="海斗分">
-      <span>海斗分</span><strong>{{ ratingText }}</strong
-      ><small
-        v-if="
-          rating?.aramhex?.status === 'ready' &&
-          rating.aramhex.percentile !== null
-        "
-        >AramHex 区内前
-        {{ (rating.aramhex.percentile * 100).toFixed(1) }}%</small
-      ><small v-else>Hexdata</small>
-      <button @click="api.openExternal('hexdata')">
-        官方查分<ArrowUpRight :size="12" />
-      </button>
+      <template v-if="editing">
+        <span>海斗分</span>
+        <input
+          v-model="draft"
+          class="rating-input"
+          inputmode="numeric"
+          maxlength="5"
+          aria-label="官网查到的海斗分"
+          placeholder="官网查到的分数"
+          @keydown.enter="saveScore()"
+          @keydown.esc="editing = false"
+        />
+        <button aria-label="保存海斗分" @click="saveScore()">
+          <Check :size="12" />保存
+        </button>
+        <button v-if="manual" @click="saveScore(true)">清除</button>
+        <button aria-label="取消记录" @click="editing = false">
+          <X :size="12" />
+        </button>
+      </template>
+      <template v-else>
+        <span>海斗分</span><strong>{{ ratingText }}</strong
+        ><small :title="rating?.message">{{ ratingNote }}</small>
+        <button
+          v-if="state.summoner"
+          title="记录在官网查到的分数（只存本机）"
+          @click="startEdit"
+        >
+          <Pencil :size="11" />记录
+        </button>
+        <button
+          title="复制本人 Riot ID 并打开 Hexdata 官方查分页"
+          @click="api.openExternal(state.summoner ? 'hexdata-copy' : 'hexdata')"
+        >
+          <Copy v-if="state.summoner" :size="11" />查分<ArrowUpRight
+            :size="12"
+          />
+        </button>
+      </template>
     </footer>
   </div>
 </template>

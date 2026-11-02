@@ -5,6 +5,7 @@ import type {
   ConnectionState,
   Settings,
   Summoner,
+  UpdateState,
 } from "../../shared/types";
 
 // 主窗口共用状态。各页面只通过这里读写设置，避免多份副本互相覆盖。
@@ -51,6 +52,16 @@ export const champions = computed(
   () =>
     new Map(catalog.value.champions.map((champion) => [champion.id, champion])),
 );
+/** 在线更新状态，由主进程推送。 */
+export const updateState = ref<UpdateState | null>(null);
+export function acceptUpdate(value: UpdateState) {
+  const previous = updateState.value?.status;
+  updateState.value = value;
+  if (value.status === "available" && previous !== "available" && previous !== "downloading")
+    notify(`发现新版本 v${value.latest}，可在 设置 → 关于 中更新`);
+  if (value.status === "ready" && previous === "downloading")
+    notify(value.message);
+}
 export const toast = ref("");
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 export function notify(message: string) {

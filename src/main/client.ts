@@ -3,7 +3,8 @@ import WebSocket from "ws";
 import { discover, type Credentials } from "./discovery";
 import { jsonRequest } from "./http";
 import { AppError, safeError } from "./errors";
-import { AutoAccept } from "./automation";
+import { AutoAccept, PhaseAction } from "./automation";
+import { lobbyInfo, matchSearch, nextBerserkChampion } from "./matchmaking";
 import { autoSelectDefaults, planAutoSelect } from "./auto-select";
 import type {
   ConnectionState,
@@ -14,6 +15,9 @@ import type {
   Summoner,
 } from "../shared/types";
 import type { Storage } from "./storage";
+
+/** 狂暴切换每次换用之间的间隔。 */
+export const BERSERK_INTERVAL_MS = 1500;
 
 export const initialState = (): ConnectionState => ({
   status: "searching",
@@ -132,8 +136,91 @@ export class Client extends EventEmitter {
   private autoBusy = false;
   private autoDone = new Set<string>();
   private autoHoverAt = new Map<number, number>();
+  /** 自动匹配：每次从其他阶段进入大厅算一轮，只尝试一次；取消匹配或拒绝确认回到大厅不自动再排。 */
+  private autoMatch: PhaseAction;
+  private playAgain: PhaseAction;
+  /** 结算点赞投票阶段（PreEndOfGame）自动提交“跳过”，不给任何人点赞。 */
+  private skipHonor: PhaseAction;
+  private honorEpoch = 0;
+  private lobbyEpoch = 0;
+  private lobbyEligible = false;
+  private autoMatchWasOn = false;
+  private endEpoch = 0;
+  /** 狂暴切换：仅本次选人有效，离开选人、断线或换号即停止。 */
+  private berserkTimer: ReturnType<typeof setInterval> | null = null;
+  private berserkOrder: number[] = [];
+  private berserkFails = 0;
+  private berserkBusy = false;
   constructor(private storage: Storage) {
     super();
+    const report = (message: string) => {
+      this.state.message = message;
+      this.publish();
+    };
+    this.autoMatch = new PhaseAction(
+      "Lobby",
+      async () => {
+        if (!this.storage.getSettings().autoMatch || !this.tencentLobby())
+          return false;
+        const epoch = this.lobbyEpoch;
+        const owner = this.state.summoner?.puuid;
+        const credentials = this.credentials;
+        const lobby = lobbyInfo(await this.request("/lol-lobby/v2/lobby"));
+        const same = () =>
+          this.storage.getSettings().autoMatch === true &&
+          this.lobbyEligible &&
+          this.lobbyEpoch === epoch &&
+          this.tencentLobby() &&
+          this.state.summoner?.puuid === owner &&
+          this.credentials === credentials;
+        if (!same()) return false;
+        if (!lobby?.canStart) {
+          report(`自动匹配未开始：${lobby?.reason ?? "无法读取房间"}`);
+          return false;
+        }
+        await this.request("/lol-lobby/v2/lobby/matchmaking/search", "POST");
+        return true;
+      },
+      report,
+      { done: "已自动开始匹配", failed: "自动匹配未能开始，请在客户端操作。" },
+      (at) => {
+        this.state.autoMatchAt = at;
+        this.publish();
+      },
+    );
+    this.playAgain = new PhaseAction(
+      "EndOfGame",
+      async () => {
+        const settings = this.storage.getSettings();
+        if (
+          !settings.autoPlayAgain ||
+          this.state.phase !== "EndOfGame" ||
+          this.state.status !== "connected" ||
+          this.state.region !== "TENCENT"
+        )
+          return false;
+        await this.request("/lol-lobby/v2/play-again", "POST");
+        return true;
+      },
+      report,
+      { done: "已回到房间", failed: "回到房间未完成，请在客户端操作。" },
+    );
+    this.skipHonor = new PhaseAction(
+      "PreEndOfGame",
+      async () => {
+        if (
+          !this.storage.getSettings().autoSkipHonor ||
+          this.state.phase !== "PreEndOfGame" ||
+          this.state.status !== "connected" ||
+          this.state.region !== "TENCENT"
+        )
+          return false;
+        await this.skipHonorBallot();
+        return true;
+      },
+      report,
+      { done: "已跳过点赞", failed: "跳过点赞未完成，请在客户端操作。" },
+    );
     this.accept = new AutoAccept(
       async () => {
         // Recheck immediately before the only automated write.
@@ -184,7 +271,7 @@ export class Client extends EventEmitter {
   stop() {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
-    this.accept.cancel();
+    this.cancelAutomation();
     this.disconnect();
   }
   private publish() {
@@ -232,7 +319,7 @@ export class Client extends EventEmitter {
     this.state.platform = null;
     this.state.region = null;
     this.state.queueId = null;
-    this.accept.cancel();
+    this.cancelAutomation();
   }
   private connectSocket() {
     if (!this.credentials || this.socket) return;
@@ -289,7 +376,7 @@ export class Client extends EventEmitter {
             this.state.ranked = [];
             this.state.championId = null;
             this.nextIdentity = 0;
-            this.accept.cancel();
+            this.cancelAutomation();
             this.connectionRevision++;
             this.emit("account-changed");
             this.publish();
@@ -303,7 +390,7 @@ export class Client extends EventEmitter {
             this.state.championId = null;
             this.selection = emptySelection();
             this.state.ranked = [];
-            this.accept.cancel();
+            this.cancelAutomation();
             this.connectionRevision++;
             this.emit("account-changed");
           }
@@ -320,11 +407,37 @@ export class Client extends EventEmitter {
       if (this.socket === socket) this.socket = null;
     });
   }
+  private cancelAutomation() {
+    this.accept.cancel();
+    this.autoMatch.cancel();
+    this.playAgain.cancel();
+    this.skipHonor.cancel();
+    this.stopBerserk();
+  }
+  private tencentLobby() {
+    return (
+      this.state.phase === "Lobby" &&
+      this.state.status === "connected" &&
+      this.state.region === "TENCENT"
+    );
+  }
   private setPhase(phase: Phase) {
     if (phase !== this.state.phase) {
+      const previous = this.state.phase;
       this.selectionRevision++;
       if (phase === "ReadyCheck") this.readyEpoch++;
+      if (phase === "EndOfGame") this.endEpoch++;
+      if (phase === "PreEndOfGame") this.honorEpoch++;
+      if (phase === "Lobby") {
+        this.lobbyEpoch++;
+        // 用户取消匹配或拒绝/错过确认回到大厅时尊重其选择，不再自动排队。
+        this.lobbyEligible = !["Matchmaking", "ReadyCheck"].includes(previous);
+      }
+      if (phase !== "Lobby") this.state.lobby = null;
+      if (phase !== "Matchmaking") this.state.search = null;
       if (phase !== "ChampSelect") {
+        if (this.berserkTimer) this.state.message = "已离开选人，狂暴切换结束";
+        this.stopBerserk();
         this.selection = emptySelection();
         this.autoDone.clear();
         this.autoHoverAt.clear();
@@ -352,6 +465,193 @@ export class Client extends EventEmitter {
       `${this.credentials?.pid}:${this.state.summoner?.puuid}:${this.readyEpoch}`,
       settings.acceptDelayMs,
     );
+    const connected =
+      this.state.status === "connected" && this.state.region === "TENCENT";
+    const identity = `${this.credentials?.pid}:${this.state.summoner?.puuid}`;
+    // 在大厅里刚打开开关时，本轮视为可自动匹配。
+    if (
+      settings.autoMatch &&
+      !this.autoMatchWasOn &&
+      this.state.phase === "Lobby"
+    ) {
+      this.lobbyEpoch++;
+      this.lobbyEligible = true;
+    }
+    this.autoMatchWasOn = settings.autoMatch === true;
+    this.autoMatch.update(
+      settings.autoMatch === true && this.lobbyEligible,
+      connected,
+      this.state.phase,
+      `${identity}:${this.lobbyEpoch}`,
+      settings.autoMatchDelayMs ?? 3000,
+    );
+    this.playAgain.update(
+      settings.autoPlayAgain === true,
+      connected,
+      this.state.phase,
+      `${identity}:${this.endEpoch}`,
+      2000,
+    );
+    this.skipHonor.update(
+      settings.autoSkipHonor === true,
+      connected,
+      this.state.phase,
+      `${identity}:${this.honorEpoch}`,
+      1000,
+    );
+  }
+  /**
+   * 跳过点赞：先用点赞 v2 接口提交 OPT_OUT（参考 Akari 的“跳过”策略）；
+   * 新版客户端不接受时改用 /lol-honor/v1/honor。两者都不给任何玩家点赞。
+   */
+  private async skipHonorBallot() {
+    try {
+      await this.request("/lol-honor-v2/v1/honor-player", "POST", {
+        honorCategory: "OPT_OUT",
+        summonerId: 0,
+      });
+    } catch {
+      await this.request("/lol-honor/v1/honor", "POST", {
+        honorType: "OPT_OUT",
+        recipientPuuid: "",
+      });
+    }
+  }
+  /** 用户点击的匹配操作；只在本人为房主的大厅开始，取消只在匹配中。 */
+  async matchmaking(action: "start" | "cancel" | "skip") {
+    if (action === "skip") {
+      this.lobbyEligible = false;
+      this.updateAutomation();
+      this.publish();
+      return;
+    }
+    if (this.state.status !== "connected" || this.state.region !== "TENCENT")
+      throw new AppError("请先启动并登录国服客户端。", "CLIENT_OFFLINE");
+    const owner = this.state.summoner?.puuid;
+    const credentials = this.credentials;
+    if (action === "start") {
+      if (this.state.phase !== "Lobby")
+        throw new AppError("请先在客户端进入组队大厅。", "MATCH_INVALID_PHASE");
+      const lobby = lobbyInfo(await this.request("/lol-lobby/v2/lobby"));
+      if (
+        this.state.phase !== "Lobby" ||
+        this.state.summoner?.puuid !== owner ||
+        this.credentials !== credentials
+      )
+        throw new AppError("房间状态已变化，请重试。", "STALE_LOBBY");
+      if (!lobby?.canStart)
+        throw new AppError(
+          lobby?.reason ?? "暂时无法开始匹配。",
+          "MATCH_BLOCKED",
+        );
+      this.autoMatch.cancel();
+      this.lobbyEligible = false;
+      await this.request("/lol-lobby/v2/lobby/matchmaking/search", "POST");
+      return;
+    }
+    if (this.state.phase !== "Matchmaking")
+      throw new AppError("当前不在匹配中。", "MATCH_INVALID_PHASE");
+    await this.request("/lol-lobby/v2/lobby/matchmaking/search", "DELETE");
+  }
+  /**
+   * 用户点击后把多行文字发到选人聊天（只有本队可见）。每行一条，间隔发送，
+   * 每条前都核对仍在同一次选人且账号未变。
+   */
+  async sendChampSelectChat(lines: string[]) {
+    if (
+      this.state.phase !== "ChampSelect" ||
+      this.state.status !== "connected" ||
+      this.state.region !== "TENCENT"
+    )
+      throw new AppError("请在选人阶段发送。", "CHAT_INVALID_PHASE");
+    const owner = this.state.summoner?.puuid;
+    const credentials = this.credentials;
+    const conversations = await this.request<any[]>(
+      "/lol-chat/v1/conversations",
+    );
+    const room = (Array.isArray(conversations) ? conversations : []).find(
+      (item) =>
+        item?.type === "championSelect" && typeof item.id === "string",
+    );
+    if (!room)
+      throw new AppError("没有找到选人聊天，请稍后重试。", "CHAT_NOT_FOUND");
+    for (const [index, line] of lines.slice(0, 10).entries()) {
+      if (index) await new Promise((resolve) => setTimeout(resolve, 400));
+      if (
+        this.state.phase !== "ChampSelect" ||
+        this.state.summoner?.puuid !== owner ||
+        this.credentials !== credentials
+      )
+        throw new AppError("已离开选人，停止发送。", "CHAT_STALE");
+      await this.request(
+        `/lol-chat/v1/conversations/${encodeURIComponent(room.id)}/messages`,
+        "POST",
+        { body: line.slice(0, 200), type: "chat" },
+      );
+    }
+  }
+  /** 狂暴切换：开启后按顺序循环换用备选席英雄，直到关闭或离开选人。 */
+  setBerserk(enabled: boolean) {
+    if (!enabled) {
+      if (this.berserkTimer) this.state.message = "已关闭狂暴切换";
+      this.stopBerserk();
+      this.publish();
+      return false;
+    }
+    if (
+      this.state.phase !== "ChampSelect" ||
+      this.state.status !== "connected" ||
+      this.state.region !== "TENCENT"
+    )
+      throw new AppError("请在选人阶段开启狂暴切换。", "BERSERK_INVALID_PHASE");
+    if (this.state.mode === "rift")
+      throw new AppError("狂暴切换只用于大乱斗的备选席。", "BERSERK_MODE");
+    if (this.berserkTimer) return true;
+    this.berserkOrder = [];
+    this.berserkFails = 0;
+    this.state.berserk = true;
+    this.state.message = "狂暴切换已开启";
+    this.berserkTimer = setInterval(
+      () => void this.berserkStep(),
+      BERSERK_INTERVAL_MS,
+    );
+    this.publish();
+    void this.berserkStep();
+    return true;
+  }
+  private stopBerserk() {
+    if (this.berserkTimer) clearInterval(this.berserkTimer);
+    this.berserkTimer = null;
+    this.state.berserk = false;
+  }
+  private async berserkStep() {
+    if (this.berserkBusy || this.choosingChampion || this.autoBusy) return;
+    if (this.state.phase !== "ChampSelect") {
+      this.stopBerserk();
+      return this.publish();
+    }
+    this.berserkBusy = true;
+    try {
+      const choices = await this.getChampionChoices();
+      // 卡片还没选时不替用户做选择，只在已有英雄后循环交换。
+      if (!this.berserkTimer || choices.kind !== "bench") return;
+      const next = nextBerserkChampion(
+        this.berserkOrder,
+        this.state.championId,
+        choices.championIds,
+      );
+      if (!next) return;
+      await this.chooseChampion(next);
+      this.berserkFails = 0;
+    } catch {
+      if (++this.berserkFails >= 8 && this.berserkTimer) {
+        this.stopBerserk();
+        this.state.message = "狂暴切换连续失败，已自动停止";
+        this.publish();
+      }
+    } finally {
+      this.berserkBusy = false;
+    }
   }
   private autoSettings() {
     return { ...autoSelectDefaults, ...this.storage.getSettings().autoSelect };
@@ -370,7 +670,9 @@ export class Client extends EventEmitter {
   private async runAutoSelect() {
     const settings = this.autoSettings();
     if (!settings.pick && !settings.ban && !settings.bench) return;
-    if (this.autoBusy || this.choosingChampion)
+    // 狂暴切换进行中由用户主导，自动抢备选席暂停。
+    if (this.berserkTimer) return;
+    if (this.autoBusy || this.choosingChampion || this.berserkBusy)
       return this.scheduleAutoSelect(800);
     let current: () => void;
     try {
@@ -795,7 +1097,7 @@ export class Client extends EventEmitter {
           this.selectionRevision++;
           this.selection = emptySelection();
           this.state.championId = null;
-          this.accept.cancel();
+          this.cancelAutomation();
           this.connectionRevision++;
           this.emit("account-changed");
         }
@@ -817,6 +1119,10 @@ export class Client extends EventEmitter {
         const session = await this.request("/lol-gameflow/v1/session");
         const queue = session.gameData?.queue;
         this.state.queueId = Number(queue?.id) || null;
+        this.state.queueName =
+          typeof queue?.description === "string" && queue.description.trim()
+            ? queue.description.trim().slice(0, 40)
+            : null;
         this.state.mode =
           queue?.gameMode === "KIWI" ||
           queue?.type === "KIWI" ||
@@ -835,7 +1141,22 @@ export class Client extends EventEmitter {
         }
       } catch {
         this.state.queueId = null;
+        this.state.queueName = null;
       }
+      this.state.lobby =
+        phase === "Lobby"
+          ? lobbyInfo(
+              await this.request("/lol-lobby/v2/lobby").catch(() => null),
+            )
+          : null;
+      this.state.search =
+        phase === "Matchmaking"
+          ? matchSearch(
+              await this.request("/lol-matchmaking/v1/search").catch(
+                () => null,
+              ),
+            )
+          : null;
       if (
         ["InProgress", "Reconnect"].includes(phase) &&
         !this.state.championId &&

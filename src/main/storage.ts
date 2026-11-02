@@ -18,6 +18,11 @@ export const defaults: Settings = {
   closeAction: "ask",
   hexSource: "aramgg",
   autoSelect: { ...autoSelectDefaults },
+  autoMatch: false,
+  autoMatchDelayMs: 3000,
+  autoPlayAgain: false,
+  autoSkipHonor: false,
+  autoCheckUpdate: true,
   managedRunePage: null,
 };
 export class Storage {
@@ -101,6 +106,10 @@ export function validateSettings(
     "autoRecognize",
     "overlay",
     "companionWindows",
+    "autoMatch",
+    "autoPlayAgain",
+    "autoSkipHonor",
+    "autoCheckUpdate",
   ] as const)
     if (typeof patch[key] === "boolean") next[key] = patch[key]!;
   if (
@@ -110,6 +119,14 @@ export function validateSettings(
     next.acceptDelayMs = Math.max(
       1000,
       Math.min(10000, Math.round(patch.acceptDelayMs)),
+    );
+  if (
+    typeof patch.autoMatchDelayMs === "number" &&
+    Number.isFinite(patch.autoMatchDelayMs)
+  )
+    next.autoMatchDelayMs = Math.max(
+      1000,
+      Math.min(30000, Math.round(patch.autoMatchDelayMs)),
     );
   if (["all", "casual", "mid", "high"].includes(patch.band ?? ""))
     next.band = patch.band!;

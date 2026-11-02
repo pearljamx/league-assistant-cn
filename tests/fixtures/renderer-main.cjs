@@ -136,6 +136,32 @@ app.whenReady().then(async () => {
     emit("companion", companion);
     return { ok: true, data: undefined };
   });
+  const matchCalls = [];
+  handle("matchmaking", (action) => {
+    matchCalls.push(action);
+    if (action === "start" && state.phase === "Lobby")
+      Object.assign(state, {
+        phase: "Matchmaking",
+        search: { timeInQueue: 0, estimated: 95, penalty: null },
+      });
+    else if (action === "cancel" && state.phase === "Matchmaking")
+      Object.assign(state, { phase: "Lobby", search: null });
+    emit("state", state);
+    return { ok: true, data: undefined };
+  });
+  handle("berserk", (enabled) => {
+    matchCalls.push("berserk:" + enabled);
+    state.berserk = enabled;
+    emit("state", state);
+    return { ok: true, data: enabled };
+  });
+  handle("hexdata-score", (score) => {
+    const manual =
+      score === null ? null : { score, recordedAt: new Date().toISOString() };
+    rating = { ...rating, manual };
+    return { ok: true, data: manual };
+  });
+  handle("match-calls", () => clone(matchCalls));
   handle("window", (action) => {
     windowActions.push(action);
     return undefined;

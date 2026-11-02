@@ -4,8 +4,11 @@ import { ArrowUpRight, ChevronRight, RefreshCw, Swords, X } from "@lucide/vue";
 import { api, unwrap } from "../api";
 import ChampionIcon from "../components/ChampionIcon.vue";
 import BrandMark from "../components/BrandMark.vue";
+import BalanceChips from "../components/BalanceChips.vue";
 import {
   act,
+  balance,
+  chipsFor,
   catalog,
   companion,
   error,
@@ -335,6 +338,7 @@ onUnmounted(() => {
         <div>
           <h1>{{ hero.name }}</h1>
           <small>{{ hero.title }} · {{ modeName }}</small>
+          <BalanceChips :chips="chipsFor(hero.id)" :source="balance?.source" />
         </div>
         <div class="info-rate">
           <strong>{{ percent(stats.get(hero.id)?.winRate) }}</strong

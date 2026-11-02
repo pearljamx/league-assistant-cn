@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   ipcMain,
   net,
   shell,
@@ -9,7 +10,8 @@ import {
   session,
 } from "electron";
 import { join, dirname } from "node:path";
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { Storage } from "./storage";
@@ -45,7 +47,14 @@ import { PlayerStore, playerTags } from "./players";
 import { SecretStore } from "./secrets";
 import { AramggProvider } from "./providers/aramgg";
 import { AramggSources, PublicAramggProvider } from "./providers/aramgg-public";
-import type { Result, Settings } from "../shared/types";
+import { AramBalanceProvider } from "./providers/aram-balance";
+import { statsLine, summarize } from "./team-stats";
+import { Updater } from "./updater";
+import type {
+  HexdataManualScore,
+  Result,
+  Settings,
+} from "../shared/types";
 
 const current = dirname(fileURLToPath(import.meta.url));
 const root = join(current, "../..");
@@ -184,6 +193,37 @@ else {
             new SecretStore(join(app.getPath("userData"), "local")),
           ),
         );
+      const balance = new AramBalanceProvider(storage);
+      // 在线更新：只有安装版能下载后静默安装；便携版（PORTABLE_EXECUTABLE_FILE）与开发版只提示。
+      const localDir = join(app.getPath("userData"), "local");
+      const updater = new Updater(app.getVersion(), {
+        fetch: net.fetch.bind(net) as typeof fetch,
+        directory: localDir,
+        installable: app.isPackaged && !process.env.PORTABLE_EXECUTABLE_FILE,
+        emit: (value) => {
+          for (const window of ownedWindows())
+            window.webContents.send("assistant:update", value);
+        },
+        launch: (file) => {
+          // electron-builder 安装包：--updated 静默覆盖原安装目录，--force-run 装完重新启动。
+          spawn(file, ["--updated", "/S", "--force-run"], {
+            detached: true,
+            stdio: "ignore",
+          }).unref();
+          quitting = true;
+          setTimeout(() => app.quit(), 300);
+        },
+      });
+      // 上次已安装的更新包不再需要。
+      void rm(join(localDir, "updates"), { recursive: true, force: true }).catch(
+        () => {},
+      );
+      const autoCheck = () => {
+        if (storage.getSettings().autoCheckUpdate !== false)
+          void updater.check();
+      };
+      setTimeout(autoCheck, 20_000).unref();
+      setInterval(autoCheck, 6 * 60 * 60_000).unref();
       // 公共数据：启动时与每 30 分钟检查一次清单。
       void aramgg.refresh();
       setInterval(() => void aramgg.refresh(), 30 * 60 * 1000).unref();
@@ -216,6 +256,11 @@ else {
         .object({
           autoAccept: z.boolean().optional(),
           acceptDelayMs: z.number().int().min(1000).max(10000).optional(),
+          autoMatch: z.boolean().optional(),
+          autoMatchDelayMs: z.number().int().min(1000).max(30000).optional(),
+          autoPlayAgain: z.boolean().optional(),
+          autoSkipHonor: z.boolean().optional(),
+          autoCheckUpdate: z.boolean().optional(),
           band: band.optional(),
           mode: z.enum(["rift", "aram", "hex"]).optional(),
           position: z
@@ -314,6 +359,108 @@ else {
       handle("champion-choose", (value) =>
         client.chooseChampion(hero.parse(value)),
       );
+      handle("matchmaking", (value) =>
+        client.matchmaking(z.enum(["start", "cancel", "skip"]).parse(value)),
+      );
+      handle("berserk", (value) => client.setBerserk(z.boolean().parse(value)));
+      /**
+       * 近期同模式战绩：选人阶段汇总队友（可发到只有队友可见的选人聊天）；
+       * 对局中汇总双方，只能复制（发到游戏内聊天需要模拟键盘，不做）。
+       */
+      handle("team-stats", async (value) => {
+        const action = z.enum(["send", "copy"]).parse(value);
+        const state = client.state;
+        const owner = state.summoner?.puuid;
+        if (state.status !== "connected" || !owner)
+          throw new AppError("请先启动并登录国服客户端。", "CLIENT_OFFLINE");
+        const mode = state.mode,
+          phase = state.phase,
+          platform = state.platform,
+          generation = client.sessionGeneration;
+        const names = new Map(
+          ((await catalog.get().catch(() => null))?.champions ?? []).map(
+            (champion) => [champion.id, champion.name],
+          ),
+        );
+        let targets: { puuid: string | null; label: string }[];
+        if (phase === "ChampSelect") {
+          targets = client.selection.members
+            .filter((member) => member.puuid !== owner)
+            .map((member, index) => ({
+              puuid: member.puuid,
+              label:
+                [names.get(member.championId), member.name]
+                  .filter(Boolean)
+                  .join(" ") || `队友${index + 1}`,
+            }));
+        } else if (["GameStart", "InProgress", "Reconnect"].includes(phase)) {
+          if (action === "send")
+            throw new AppError(
+              "对局中无法发到游戏内聊天，请使用复制后自行粘贴。",
+              "CHAT_IN_GAME",
+            );
+          const live = await liveGame.get();
+          const team = live.players.find((player) => player.isSelf)?.teamId;
+          targets = live.players
+            .filter((player) => !player.isSelf)
+            .sort(
+              (a, b) => Number(b.teamId === team) - Number(a.teamId === team),
+            )
+            .map((player) => ({
+              puuid: player.identityHidden ? null : player.puuid,
+              label: [
+                player.teamId === team ? "友" : "敌",
+                names.get(player.championId),
+                player.riotId,
+              ]
+                .filter(Boolean)
+                .join(" "),
+            }));
+        } else
+          throw new AppError("请在选人阶段或对局中使用。", "STATS_INVALID_PHASE");
+        if (!targets.length)
+          throw new AppError("没有可汇总的玩家。", "STATS_EMPTY");
+        const lines = await Promise.all(
+          targets.slice(0, 9).map(async (target) => {
+            if (!target.puuid) return `${target.label.slice(0, 40)}：身份隐藏`;
+            try {
+              const page = await history.history(target.puuid, 0);
+              return statsLine(
+                target.label,
+                summarize(page.matches, target.puuid, mode),
+                mode,
+              );
+            } catch {
+              return statsLine(target.label, null, mode);
+            }
+          }),
+        );
+        if (
+          client.state.summoner?.puuid !== owner ||
+          client.state.platform !== platform ||
+          client.state.phase !== phase ||
+          client.sessionGeneration !== generation
+        )
+          throw new AppError("账号或对局阶段已变化，请重试。", "STALE_ACCOUNT");
+        if (action === "copy") clipboard.writeText(lines.join("\n"));
+        else await client.sendChampSelectChat(lines);
+        return { lines };
+      });
+      handle("aram-balance", () => balance.get());
+      handle("update-state", () => updater.state);
+      handle("update-action", async (value) => {
+        const action = z
+          .enum(["check", "download", "install", "page"])
+          .parse(value);
+        if (action === "check") return updater.check();
+        if (action === "download") return updater.download();
+        if (action === "install") return updater.install();
+        await shell.openExternal(
+          updater.state.pageUrl ??
+            "https://github.com/pearljamx/league-assistant-cn/releases",
+        );
+        return updater.state;
+      });
       handle("companion-state", () => companions.snapshot());
       handle("companion-select", async (value) => {
         const request = ++companionSelectionRequest;
@@ -533,6 +680,9 @@ else {
               : undefined
             : z.string().min(1).max(100).parse(value);
         const result = await rating.query(riotId, platform);
+        // 只有查询本人时附上本机手动记录的海斗分。
+        const manual =
+          value === undefined && owner ? await manualScore(platform, owner) : null;
         if (
           client.state.summoner?.puuid !== owner ||
           client.state.platform !== platform ||
@@ -540,7 +690,39 @@ else {
           client.state.status !== status
         )
           throw new AppError("账号或大区已变化，请重新查询。", "STALE_ACCOUNT");
-        return result;
+        return { ...result, manual };
+      });
+      /**
+       * Hexdata 接口明确拒绝脚本调用（403 web_lookup_only），因此不自动查询；
+       * 用户在官网查到后可手动记录本人的分数，只存本机并标注为手动记录。
+       */
+      const manualKey = (platform: string | null, puuid: string) =>
+        `hexdata-manual-v1:${platform ?? ""}:${puuid}`;
+      async function manualScore(
+        platform: string | null,
+        puuid: string,
+      ): Promise<HexdataManualScore | null> {
+        const saved = await storage.cache<HexdataManualScore | null>(
+          manualKey(platform, puuid),
+        );
+        const data = saved?.data;
+        return data &&
+          Number.isInteger(data.score) &&
+          typeof data.recordedAt === "string"
+          ? data
+          : null;
+      }
+      handle("hexdata-score-save", async (value) => {
+        const score = z.number().int().min(0).max(10000).nullable().parse(value);
+        const owner = client.state.summoner?.puuid;
+        if (!owner || client.state.status !== "connected")
+          throw new AppError("请先登录客户端再记录本人海斗分。", "CLIENT_OFFLINE");
+        const record =
+          score === null
+            ? null
+            : { score, recordedAt: new Date().toISOString() };
+        await storage.put(manualKey(client.state.platform, owner), record);
+        return record;
       });
       const urls = {
         hexdata: "https://hexdata.com.cn/matchmaking-position",
@@ -550,9 +732,21 @@ else {
       };
       handle("open", (value) => {
         const target = z
-          .enum(["hexdata", "github", "data-license", "aramgg-developer"])
+          .enum([
+            "hexdata",
+            "hexdata-copy",
+            "github",
+            "data-license",
+            "aramgg-developer",
+          ])
           .parse(value);
-        if (target === "hexdata") openHexdata(urls.hexdata);
+        if (target === "hexdata-copy") {
+          // 复制本人 Riot ID 方便在官方页面粘贴查询；不向页面注入或代填。
+          const own = client.state.summoner;
+          if (own?.gameName && own.tagLine)
+            clipboard.writeText(`${own.gameName}#${own.tagLine}`);
+          openHexdata(urls.hexdata);
+        } else if (target === "hexdata") openHexdata(urls.hexdata);
         else return shell.openExternal(urls[target]);
       });
       handle("recognition", () => recognition.state);

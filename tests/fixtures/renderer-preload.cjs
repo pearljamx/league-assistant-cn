@@ -450,7 +450,6 @@ const api = {
     runeCalls.push({ championId, query, index, perks: expectedPerks });
     return ok({ pageId: 7 });
   },
-  openExternal: unavailable,
   scanAugments: unavailable,
   mainWindow: (action) => remote("window", "main:" + action),
   getPlayerNote: (puuid) => ok(notes.get(puuid) ?? null),
@@ -569,6 +568,44 @@ const api = {
   selectCompanionChampion: (id) => remote("select-companion", id),
   companionWindow: (action) => remote("window", action),
   chooseChampion: (id) => invoke("choose", id),
+  matchmaking: (action) => invoke("matchmaking", action),
+  setBerserk: (enabled) => invoke("berserk", enabled),
+  saveHexdataScore: (score) => invoke("hexdata-score", score),
+  teamStats: (action) => {
+    toolCalls.push("team-stats:" + action);
+    return ok({ lines: ["隔离测试：队友一 近10场海克斯 6胜4负"] });
+  },
+  // 隔离测试数据：英雄 202 / 22 的合成平衡调整，不代表真实数值。
+  getAramBalance: () =>
+    ok({
+      champions: { 202: { dmg_dealt: 0.95, dmg_taken: 1.05 }, 22: { dmg_dealt: 1.05 } },
+      source: "隔离测试数据",
+      license: "test",
+      fetchedAt: null,
+      stale: false,
+    }),
+  getUpdateState: () =>
+    ok({
+      status: "available",
+      current: "0.3.0",
+      latest: "9.9.9",
+      publishedAt: null,
+      notes: null,
+      pageUrl: "https://github.com/pearljamx/league-assistant-cn/releases",
+      progress: null,
+      installable: true,
+      message: "隔离测试：发现新版本 v9.9.9",
+      checkedAt: null,
+    }),
+  updateAction: (action) => {
+    toolCalls.push("update:" + action);
+    return unavailable();
+  },
+  onUpdate: () => () => {},
+  openExternal: (target) => {
+    toolCalls.push("open:" + target);
+    return ok(undefined);
+  },
   onCompanionState: (callback) => remoteSubscribe("companion", callback),
   onSelection: (callback) => remoteSubscribe("selection", callback),
 };
@@ -609,6 +646,7 @@ contextBridge.exposeInMainWorld("rendererFixture", {
     historyDelay = milliseconds;
   },
   chooseCalls: () => invoke("choose-calls"),
+  matchCalls: () => invoke("match-calls"),
   choices: (value) => invoke("patch-choices", value),
   windowActions: () => invoke("window-actions"),
 });
