@@ -143,3 +143,10 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 平衡：providers/aram-balance.ts 拉 wiki 原始 Lua，先去注释，按两空格缩进的顶层条目取 id 与 ["aram"] 表；实测 134 个英雄有调整（202 为伤害 -5% 承伤 +5%）。shared/aram-balance.ts 转显示（承伤降低算增强、急速为加减值），BalanceChips.vue 用于 Mini 当前英雄、推荐窗标题；Mini 备选头像右上 ▲▼ 与 tooltip。
 - 更新：main/updater.ts，GitHub API releases?per_page=10，latestRelease 取最高版本非草稿，主机白名单 api.github.com/github.com/objects.githubusercontent.com/release-assets.githubusercontent.com；下载流式写 .part 同时 SHA-256，与 SHA256SUMS 不一致删除。启动 20 秒后与每 6 小时自动检查（autoCheckUpdate 默认开），启动时删除 local/updates。设置 → 关于有检查/下载/重启安装/发布页。实测 v0.3.0 发布可解析出安装包与 SHA256SUMS。现有 v0.3.0 不含更新器，用户需手动装一次含此功能的版本。
 - 验证：vitest 170 项（新增 tests/v04-features.test.ts 9 项）；test:companions（新增平衡标签、发战绩）、test:renderer、test:history、test:live 均无错误；设置页更新区截图 artifacts/screenshots/settings-update-fixture.png。真实客户端未做写入测试；静默安装流程未实测（需要真正的新版本发布）。
+
+## 2026-11-02 v0.4.0 发布
+
+- package.json/lock 升到 0.4.0，User-Agent 改 PearljamHex/0.4；npm run build:win 成功，Setup 504e136f…、Portable f2ebb8f1…（完整值见 dist/SHA256SUMS 与 Release）。
+- 本机安装尝试：旧 0.3.0 装在 E:\英雄联盟助手\测试\LeagueAssistantCN\PearljamHex。关闭助手后以 `--updated /S --force-run /D=原目录` 和 `/S /D=原目录` 运行均退出码 2；Restart Manager 显示 resourcespp.asar 被 Claude 桌面应用（Electron 会把扫描到的 .asar 当压缩包打开）持有，改名也失败。教训：不要把测试安装放在 Claude 打开的项目目录内。用户决定推送后自行安装。
+- 提交 da1a38a 推送 main，标签 v0.4.0，gh release create --prerelease 上传三个附件；服务端 digest 与本地一致，公开 SHA256SUMS 下载 diff 一致。附件构建自 da1a38a 之前的工作区（之后只改 README/记忆，不影响程序）。
+- 首轮 Windows CI 41413265707 失败：v04 测试中 sendChampSelectChat 的拒绝在 expect 挂上前发生，被 vitest 判为未处理错误（本机未复现）；6505d1e 改为立即 .then 捕获，重跑 CI 41413804955 通过（success）。
