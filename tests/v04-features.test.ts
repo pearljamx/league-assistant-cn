@@ -339,3 +339,116 @@ describe("Hexdata 官方窗口查询结果", async () => {
     expect(parseMatchReport(null)).toBeNull();
   });
 });
+
+describe("在线更新：慢速下载与断点续传", () => {
+  const name = "PearljamHex-0.4.1-x64-Setup.exe";
+  const installer = Buffer.from("0123456789".repeat(10)); // 100 字节
+  const hash = createHash("sha256").update(installer).digest("hex");
+  const listing = JSON.stringify([
+    {
+      tag_name: "v0.4.1",
+      draft: false,
+      html_url: "https://github.com/pearljamx/league-assistant-cn/releases/tag/v0.4.1",
+      assets: [
+        { name, browser_download_url: "https://github.com/x/setup.exe", size: 100 },
+        { name: "SHA256SUMS", browser_download_url: "https://github.com/x/SHA256SUMS", size: 1 },
+      ],
+    },
+  ]);
+  /** 每 delay 毫秒发 10 字节；stallAt 之后不再发送（模拟断网卡住）。支持 Range。 */
+  function slowFetch(delay: number, stallAt = Infinity) {
+    const ranges: (string | null)[] = [];
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("api.github.com")) return new Response(listing);
+      if (url.endsWith("SHA256SUMS")) return new Response(`${hash}  ${name}\n`);
+      const range = (init?.headers as Record<string, string>)?.Range ?? null;
+      ranges.push(range);
+      const start = range ? Number(range.match(/bytes=(\d+)-/)![1]) : 0;
+      const signal = init?.signal;
+      let at = start;
+      const body = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          if (at >= installer.length) return controller.close();
+          if (at >= stallAt)
+            return new Promise((_, reject) =>
+              signal?.addEventListener("abort", () => reject(signal.reason)),
+            );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          controller.enqueue(new Uint8Array(installer.subarray(at, at + 10)));
+          at += 10;
+        },
+      });
+      return new Response(body, { status: range ? 206 : 200 });
+    }) as unknown as typeof fetch;
+    return { fetcher, ranges };
+  }
+  const make = (fetcher: typeof fetch, directory: string) =>
+    new Updater("0.4.0", {
+      fetch: fetcher,
+      directory,
+      installable: true,
+      emit: () => {},
+      launch: () => {},
+      connectTimeout: 100,
+      idleTimeout: 150,
+    });
+  it("总时长超过连接超时也能下完（只按空闲时间判断中断）", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "phex-slow-"));
+    try {
+      const updater = make(slowFetch(30).fetcher, directory); // 约 300ms > 100ms
+      await updater.check();
+      await updater.download();
+      expect(updater.state.status).toBe("ready");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+  it("卡住时保留进度，再次下载用 Range 续传并整体校验", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "phex-resume-"));
+    try {
+      const first = make(slowFetch(5, 40).fetcher, directory);
+      await first.check();
+      await first.download();
+      expect(first.state.status).toBe("available");
+      expect(first.state.message).toContain("从断点继续");
+      const partPath = join(directory, "updates", name + ".part");
+      expect((await readFile(partPath)).length).toBe(40);
+      const second = slowFetch(5);
+      const updater = make(second.fetcher, directory);
+      await updater.check();
+      await updater.download();
+      expect(second.ranges).toEqual(["bytes=40-"]);
+      expect(updater.state.status).toBe("ready");
+      expect(await readFile(join(directory, "updates", name))).toEqual(installer);
+      // 启动清理：当前已是 0.4.1 时删除，不是更新的版本不保留。
+      await updater.cleanup();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+it("启动清理只保留比当前版本新的未完成下载", async () => {
+  const { writeFile, mkdir, readdir } = await import("node:fs/promises");
+  const directory = await mkdtemp(join(tmpdir(), "phex-clean-"));
+  try {
+    const folder = join(directory, "updates");
+    await mkdir(folder, { recursive: true });
+    for (const file of [
+      "PearljamHex-0.4.1-x64-Setup.exe.part",
+      "PearljamHex-0.4.0-x64-Setup.exe.part",
+      "PearljamHex-0.4.0-x64-Setup.exe",
+    ])
+      await writeFile(join(folder, file), "x");
+    await new Updater("0.4.0", {
+      fetch: fetch,
+      directory,
+      installable: true,
+      emit: () => {},
+      launch: () => {},
+    }).cleanup();
+    expect(await readdir(folder)).toEqual(["PearljamHex-0.4.1-x64-Setup.exe.part"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

@@ -10,7 +10,7 @@ import {
   session,
 } from "electron";
 import { join, dirname } from "node:path";
-import { rm, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -225,10 +225,8 @@ else {
           setTimeout(() => app.quit(), 300);
         },
       });
-      // 上次已安装的更新包不再需要。
-      void rm(join(localDir, "updates"), { recursive: true, force: true }).catch(
-        () => {},
-      );
+      // 删除旧版本安装包，保留新版本未下完的部分以便续传。
+      void updater.cleanup();
       const autoCheck = () => {
         if (storage.getSettings().autoCheckUpdate !== false)
           void updater.check();

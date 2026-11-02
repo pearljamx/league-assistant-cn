@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { mkdir, rename, rm } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { UpdateState } from "../shared/types";
 import { AppError } from "./errors";
@@ -108,6 +108,10 @@ export class Updater {
       installable: boolean;
       emit: (state: UpdateState) => void;
       launch: (file: string) => void;
+      /** 连接（收到响应头）超时，默认 30 秒。 */
+      connectTimeout?: number;
+      /** 下载中多久收不到数据算中断，默认 60 秒；不限制总时长。 */
+      idleTimeout?: number;
     },
   ) {
     this.state = {
@@ -129,26 +133,83 @@ export class Updater {
     this.state = { ...this.state, ...patch };
     this.options.emit(structuredClone(this.state));
   }
-  private async get(url: string, accept: string) {
-    const response = await this.options.fetch(url, {
-      headers: {
-        Accept: accept,
-        "User-Agent": `PearljamHex/${this.state.current}`,
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!https(response.url || url))
-      throw new AppError("更新地址被重定向到未知主机。", "UPDATE_HOST");
-    if (!response.ok)
-      throw new AppError(
-        response.status === 403
-          ? "GitHub 查询过于频繁，请稍后再试。"
-          : `更新服务返回 ${response.status}。`,
-        `HTTP_${response.status}`,
-        response.status,
+  /**
+   * 连接阶段有超时；拿到响应后切换为“空闲超时”：只有持续一段时间收不到数据才中断，
+   * 网速慢但在下载时不会被掐断。调用方读完正文后须调用 done()。
+   */
+  private async get(
+    url: string,
+    accept: string,
+    headers: Record<string, string> = {},
+  ) {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const arm = (ms: number, error: AppError) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(error), ms);
+    };
+    const done = () => clearTimeout(timer);
+    const touch = () =>
+      arm(
+        this.options.idleTimeout ?? 60_000,
+        new AppError("下载中断：长时间没有收到数据。", "UPDATE_STALLED"),
       );
-    return response;
+    arm(
+      this.options.connectTimeout ?? 30_000,
+      new AppError("连接更新服务器超时，请检查网络或系统代理。", "UPDATE_TIMEOUT"),
+    );
+    let response: Response;
+    try {
+      response = await this.options.fetch(url, {
+        headers: {
+          Accept: accept,
+          "User-Agent": `PearljamHex/${this.state.current}`,
+          ...headers,
+        },
+        redirect: "follow",
+        signal: controller.signal,
+      });
+    } catch (error) {
+      done();
+      throw controller.signal.reason instanceof AppError
+        ? controller.signal.reason
+        : error;
+    }
+    try {
+      if (!https(response.url || url))
+        throw new AppError("更新地址被重定向到未知主机。", "UPDATE_HOST");
+      if (!response.ok)
+        throw new AppError(
+          response.status === 403
+            ? "GitHub 查询过于频繁，请稍后再试。"
+            : `更新服务返回 ${response.status}。`,
+          `HTTP_${response.status}`,
+          response.status,
+        );
+    } catch (error) {
+      done();
+      throw error;
+    }
+    touch();
+    return { response, touch, done, signal: controller.signal };
+  }
+  /** 启动时删除旧版本留下的安装包；保留更新版本未下完的 .part 以便续传。 */
+  async cleanup() {
+    const folder = join(this.options.directory, "updates");
+    let names: string[] = [];
+    try {
+      names = await readdir(folder);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const version = name.match(/^PearljamHex-(\d+\.\d+\.\d+)-x64-Setup\.exe\.part$/)?.[1];
+      if (version && (compareVersions(version, this.state.current) ?? 0) > 0)
+        continue;
+      await rm(join(folder, name), { force: true, recursive: true }).catch(
+        () => {},
+      );
+    }
   }
   async check() {
     if (this.busy) return this.state;
@@ -156,11 +217,13 @@ export class Updater {
     this.busy = true;
     this.set({ status: "checking", message: "正在检查更新" });
     try {
-      const response = await this.get(
+      const request = await this.get(
         RELEASES_API,
         "application/vnd.github+json",
       );
-      const release = latestRelease(await response.json());
+      const release = latestRelease(
+        await request.response.json().finally(request.done),
+      );
       const checkedAt = new Date().toISOString();
       if (!release) {
         this.set({ status: "none", message: "没有找到可用的发布", checkedAt });
@@ -193,7 +256,10 @@ export class Updater {
     }
     return this.state;
   }
-  /** 下载安装包并按同一发布的 SHA256SUMS 校验；校验不符即删除。 */
+  /**
+   * 下载安装包并按同一发布的 SHA256SUMS 校验；校验不符即删除。
+   * 中断时保留 .part，再次下载用 Range 从断点续传（先重算已下载部分的摘要）。
+   */
   async download() {
     if (!this.options.installable)
       throw new AppError("便携版请到发布页手动下载新版。", "UPDATE_PORTABLE");
@@ -205,51 +271,82 @@ export class Updater {
     if (release.installer.size > MAX_INSTALLER)
       throw new AppError("安装包大小异常，已拒绝下载。", "UPDATE_SIZE");
     this.busy = true;
-    this.set({ status: "downloading", progress: 0, message: "正在下载更新" });
+    this.set({ status: "downloading", progress: 0, message: "正在连接下载服务器" });
     const folder = join(this.options.directory, "updates");
     const target = join(folder, release.installer.name);
     const part = target + ".part";
+    const mb = (bytes: number) => (bytes / 1048576).toFixed(0);
+    let keepPart = true;
     try {
-      const sums = await (await this.get(release.sums.url, "text/plain")).text();
-      const expected = expectedHash(sums, release.installer.name);
+      const sums = await this.get(release.sums.url, "text/plain");
+      const expected = expectedHash(
+        await sums.response.text().finally(sums.done),
+        release.installer.name,
+      );
       if (!expected)
         throw new AppError("校验文件中没有该安装包。", "UPDATE_HASH");
       await mkdir(folder, { recursive: true });
-      const response = await this.get(
+      let hash = createHash("sha256");
+      let offset = 0;
+      const size = release.installer.size;
+      const existing = await stat(part).catch(() => null);
+      if (existing && existing.size > 0 && (!size || existing.size < size)) {
+        for await (const chunk of createReadStream(part)) hash.update(chunk);
+        offset = existing.size;
+      } else if (existing) await rm(part, { force: true });
+      const request = await this.get(
         release.installer.url,
         "application/octet-stream",
+        offset ? { Range: `bytes=${offset}-` } : {},
       );
+      const { response } = request;
+      // 服务器不支持续传时从头下载。
+      if (offset && response.status !== 206) {
+        offset = 0;
+        hash = createHash("sha256");
+      }
       const total =
-        Number(response.headers.get("content-length")) ||
-        release.installer.size;
+        size || offset + (Number(response.headers.get("content-length")) || 0);
       if (!response.body) throw new AppError("下载失败。", "UPDATE_DOWNLOAD");
-      const hash = createHash("sha256");
-      const out = createWriteStream(part);
-      let received = 0,
-        reported = 0;
+      const out = createWriteStream(part, { flags: offset ? "a" : "w" });
+      let received = offset,
+        reported = offset;
       const reader = response.body.getReader();
       try {
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
+          request.touch();
           received += value.length;
-          if (received > MAX_INSTALLER)
+          if (received > MAX_INSTALLER) {
+            keepPart = false;
             throw new AppError("安装包大小异常。", "UPDATE_SIZE");
+          }
           hash.update(value);
           if (!out.write(value))
             await new Promise<void>((resolve) => out.once("drain", () => resolve()));
-          if (total && received - reported > total / 100) {
+          if (total && received - reported > total / 200) {
             reported = received;
-            this.set({ progress: Math.min(0.99, received / total) });
+            this.set({
+              progress: Math.min(0.99, received / total),
+              message: `正在下载 ${mb(received)} / ${mb(total)} MB`,
+            });
           }
         }
+      } catch (error) {
+        throw request.signal.reason instanceof AppError
+          ? request.signal.reason
+          : error;
       } finally {
+        request.done();
         await new Promise<void>((resolve, reject) =>
           out.end((error?: Error | null) => (error ? reject(error) : resolve())),
         );
       }
-      if (hash.digest("hex") !== expected)
-        throw new AppError("安装包校验不一致，已删除。", "UPDATE_HASH");
+      if (hash.digest("hex") !== expected) {
+        keepPart = false;
+        throw new AppError("安装包校验不一致，已删除，请重新下载。", "UPDATE_HASH");
+      }
       await rename(part, target);
       this.file = target;
       this.set({
@@ -258,14 +355,19 @@ export class Updater {
         message: `v${release.version} 已下载并校验，重启即可安装`,
       });
     } catch (error) {
-      await rm(part, { force: true }).catch(() => {});
+      if (!keepPart) await rm(part, { force: true }).catch(() => {});
+      const saved = keepPart ? await stat(part).catch(() => null) : null;
+      const reason =
+        error instanceof AppError ? error.message : "网络连接中断。";
       this.set({
         status: "available",
         progress: null,
         message:
-          error instanceof AppError
-            ? error.message
-            : "下载更新失败，请检查网络后重试。",
+          saved && saved.size > 0
+            ? `${reason}已保留 ${mb(saved.size)} MB，点「下载更新」从断点继续。`
+            : error instanceof AppError
+              ? reason
+              : "下载更新失败，请检查网络或系统代理后重试。",
       });
     } finally {
       this.busy = false;
