@@ -21,10 +21,7 @@ import { TencentProvider } from "./providers/tencent";
 import { AramHexProvider } from "./providers/aramhex";
 import { HistoryProvider } from "./providers/history";
 import { LiveGameProvider } from "./providers/live-game";
-import {
-  SkillRatingProvider,
-  normalizeRatingRiotId,
-} from "./providers/rating";
+import { SkillRatingProvider, normalizeRatingRiotId } from "./providers/rating";
 import { RuneService } from "./runes";
 import { RecognitionService } from "./recognition";
 import { AppError, safeError } from "./errors";
@@ -58,11 +55,7 @@ import {
   sameRiotId,
   watchHexdataReports,
 } from "./providers/hexdata-capture";
-import type {
-  HexdataManualScore,
-  Result,
-  Settings,
-} from "../shared/types";
+import type { HexdataManualScore, Result, Settings } from "../shared/types";
 
 const current = dirname(fileURLToPath(import.meta.url));
 const root = join(current, "../..");
@@ -426,7 +419,10 @@ else {
                 .join(" "),
             }));
         } else
-          throw new AppError("请在选人阶段或对局中使用。", "STATS_INVALID_PHASE");
+          throw new AppError(
+            "请在选人阶段或对局中使用。",
+            "STATS_INVALID_PHASE",
+          );
         if (!targets.length)
           throw new AppError("没有可汇总的玩家。", "STATS_EMPTY");
         const lines = await Promise.all(
@@ -760,10 +756,19 @@ else {
           });
         })().catch(() => {});
       handle("hexdata-score-save", async (value) => {
-        const score = z.number().int().min(0).max(10000).nullable().parse(value);
+        const score = z
+          .number()
+          .int()
+          .min(0)
+          .max(10000)
+          .nullable()
+          .parse(value);
         const owner = client.state.summoner?.puuid;
         if (!owner || client.state.status !== "connected")
-          throw new AppError("请先登录客户端再记录本人海斗分。", "CLIENT_OFFLINE");
+          throw new AppError(
+            "请先登录客户端再记录本人海斗分。",
+            "CLIENT_OFFLINE",
+          );
         const record =
           score === null
             ? null
@@ -1110,14 +1115,19 @@ else {
       }
       screen.on("display-removed", repositionCompanions);
       screen.on("display-metrics-changed", repositionCompanions);
+      /** 悬浮窗：定位到三张卡时盖住整个游戏画面并在卡片上标注，否则显示右上角列表面板。 */
+      let overlayCovering = false;
       function updateOverlay() {
         if (!overlay || overlay.isDestroyed()) return;
+        const state = recognition.state;
+        const bounds = state.gameWindow;
+        const located = Boolean(bounds) && (state.slots?.length ?? 0) === 3;
         if (
           !storage.getSettings().overlay ||
           !(
-            recognition.state.status === "recognized" ||
-            (recognition.state.status === "scanning" &&
-              recognition.state.gameWindow)
+            state.status === "recognized" ||
+            (state.status === "uncertain" && located) ||
+            (state.status === "scanning" && bounds)
           ) ||
           client.state.phase !== "InProgress" ||
           client.state.mode !== "hex"
@@ -1125,7 +1135,23 @@ else {
           overlay.hide();
           return;
         }
-        const bounds = recognition.state.gameWindow;
+        // 识别中保持上一次的显示方式，避免标注和面板来回跳。
+        const cover =
+          located || (state.status === "scanning" && overlayCovering);
+        if (cover && bounds) {
+          // 游戏窗口是物理像素，转换成 DIP 后整窗覆盖；窗口本身点击穿透、不抢焦点。
+          const rect = screen.screenToDipRect(null, {
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+          });
+          overlay.setBounds(rect);
+          overlayCovering = true;
+          overlay.showInactive();
+          return;
+        }
+        overlayCovering = false;
         const point = bounds
           ? screen.screenToDipPoint({
               x: Math.round(bounds.x + bounds.width / 2),
@@ -1134,7 +1160,12 @@ else {
           : screen.getCursorScreenPoint();
         const display = screen.getDisplayNearestPoint(point),
           area = display.workArea;
-        overlay.setPosition(area.x + area.width - 360, area.y + 28);
+        overlay.setBounds({
+          x: area.x + area.width - 360,
+          y: area.y + 28,
+          width: 340,
+          height: 365,
+        });
         overlay.showInactive();
       }
       client.on("state", (state) => {

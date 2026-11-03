@@ -387,6 +387,8 @@ export interface Settings {
   position: Position;
   tier: number;
   autoRecognize: boolean;
+  /** 内部迁移标记：新版首次启动时把自动识别打开一次，之后尊重用户选择。 */
+  autoRecognizeV2?: boolean;
   monitor: number;
   overlay: boolean;
   companionWindows?: boolean;
@@ -510,8 +512,22 @@ export interface HexdataManualScore {
   /** 官网报告生成时间。 */
   generatedAt?: string | null;
 }
+/** 识别到的一张卡在游戏画面中的位置（相对比例 0–1），悬浮窗据此在卡片上标注。 */
+export interface RecognitionSlot {
+  slot: number;
+  /** 未可靠识别时为空，悬浮窗显示“未识别”。 */
+  augmentId: number | null;
+  centerX: number;
+  top: number;
+  bottom: number;
+  width: number;
+  /** 评级徽章的中心高度（卡片下部空白处）。 */
+  badgeY: number;
+}
 export interface Recognition {
   gameWindow?: { x: number; y: number; width: number; height: number };
+  /** 三张卡的位置；手动比较或未定位到卡片时为空。 */
+  slots?: RecognitionSlot[];
   status:
     | "unavailable"
     | "idle"

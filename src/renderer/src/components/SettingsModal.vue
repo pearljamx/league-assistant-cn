@@ -245,7 +245,10 @@ onMounted(async () => {
           <div class="setting-row">
             <div>
               <strong>自动检测三选一</strong>
-              <p>仅在海克斯对局中检测。也可按 F6 手动识别。</p>
+              <p>
+                仅在海克斯对局中检测：找到三张海克斯卡后把评级标在卡片上，没出现三选一时只做轻量检测。也可按
+                F6 手动识别。截图只在内存中处理，不保存、不上传。
+              </p>
             </div>
             <button
               class="switch"
@@ -605,7 +608,7 @@ onMounted(async () => {
               <p>
                 界面参考 LeagueAkari；国服统计来自腾讯 101 与 AramHex（CC BY-NC
                 4.0）；海克斯全球样本来自
-                aramgg.com，经太农海克斯助手数据包分发；强化图标来自本机客户端；大乱斗平衡调整来自
+                aramgg.com 官方数据 API（经 PEARLJAM HEX 公共数据包分发）；游戏内卡片标注思路参考太农海克斯助手（经作者授权，本项目独立实现）；强化图标来自本机客户端；大乱斗平衡调整来自
                 League of Legends Wiki（CC BY-SA 3.0）。
               </p>
             </div>

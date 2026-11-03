@@ -25,6 +25,33 @@ def match_name(text, dictionary):
     return {**scored[0][1], 'matchConfidence': scored[0][0]}
 
 
+def match_title(texts, dictionary):
+    """Match the OCR rows of one card's title band.
+
+    逐行模糊匹配；不行再看某行是否完整包含某个强化名（只认 3 字以上、
+    唯一最长的名字，避免标签行里的短词误配）；最后把多行拼起来再试一次，
+    兼容换行的长标题。
+    """
+    for text in texts:
+        found = match_name(text, dictionary)
+        if found:
+            return {**found, 'text': text}
+    for text in texts + [''.join(texts)]:
+        key = normalize(text)
+        contained = [entry for entry in dictionary if len(normalize(entry['name'])) >= 3 and normalize(entry['name']) in key]
+        if contained:
+            longest = max(len(normalize(entry['name'])) for entry in contained)
+            best = [entry for entry in contained if len(normalize(entry['name'])) == longest]
+            if len({entry['id'] for entry in best}) == 1:
+                return {**best[0], 'matchConfidence': 1.0, 'text': text}
+    joined = ''.join(texts)
+    if len(texts) > 1:
+        found = match_name(joined, dictionary)
+        if found:
+            return {**found, 'text': joined}
+    return None
+
+
 def choose_cards(ocr_rows, dictionary, width, height):
     candidates = [[], [], []]
     for row in ocr_rows or []:

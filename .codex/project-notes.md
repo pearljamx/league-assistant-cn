@@ -168,3 +168,12 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 
 - 修复 438737d + 版本 84f8658，标签 v0.4.2 → 84f8658；Setup e224d5ae…、Portable 94120678…，服务端 digest 与本地一致，公开 SHA256SUMS diff 一致；Windows CI 41465568411 success。
 - 发布说明写明 0.4.0/0.4.1 的旧更新器无法在线升级到本版，需手动安装一次。
+
+## 2026-11-03 移植太农的游戏内海克斯标注
+
+- 用户要求查看“太农海斗助手”如何在对局中标注海克斯强度并移植。本机 C:\Users\1208481519\Downloads\太农海克斯助手1.0.zip（GBK 文件名）解压到 scratchpad 新目录静态查看，未运行。它是 .NET 8 WPF 单文件包：自写解析器取出“太农海克斯助手.dll”，用临时目录安装的 ilspycmd 8.2 反编译（README/THIRD_PARTY_NOTICES 已写明经作者授权参考思路、未复制代码或数据，本次保持一致）。
+- 太农实现要点：识别默认开启，1 秒轮询（有卡 2 秒、失败 8 秒），只在海克斯模式、游戏内、已知英雄时；EnumWindows 找 League of Legends 进程最大可见窗口（GetWindowRect，不要求前台）CopyFromScreen；ScreenCardRecognizer：4×4 网格 4 采样点深色（亮度<62 且 R<90 G<95 B<105）→ 连通域 → 过滤（面积>1.2%、宽 7.5–24%、高 28–72%、宽高比 0.25–0.7、中心 y 24–68%）→ 前 10 大里挑间距 28–58%、等距、上下对齐的三块；标题区 OCR（Windows.Media.Ocr zh-Hans），失败整卡兜底；匹配=NFKC 归一化后包含即 1.0，否则 1-编辑距离/最长≥0.62。徽章在卡片 top+78% 高度，显示该英雄胜率，按 ≥55/52/50/48 分 S–D 配色；点击穿透工具窗 WS_EX 0x80800A0。InterfaceFirstCardRecognizer 的 LCU 探测默认关闭、未使用。
+- 本项目实现：worker/cards.py（numpy + cv2.connectedComponentsWithStats，额外加等距/对齐硬上限 5%）；recognizer.scan 截整个客户区，定位到三张卡→scan_cards（三张卡像素字节签名缓存、changed 事件、标题带 34%–60% 拼图一次 OCR、不匹配整卡兜底且兜底结果与他卡重复则丢弃），否则非 force 直接 idle 不 OCR，force（F6）走 scan_legacy 原整块 OCR。matching.match_title（逐行模糊→≥3 字唯一最长包含→多行拼接）。recognition.ts parseSlots（必须 3 个、0–1 比例、top<bottom），publish slots；index.ts updateOverlay：有 slots 时 screen.screenToDipRect 盖住游戏画面，scanning 时沿用上次方式，否则原右上角面板（setBounds 恢复 340×365）。OverlayApp 徽章模式（hex-* 类名；.card-badge 与 Mini 窗全局样式冲突过）：三张统一数据源（识别出的强化都在 aramgg 数据里才用 aramgg），评级 gradeFromRank/augmentGrades，唯一最佳标“推荐”，卡片上方说明来源与版本/日期。autoRecognize 默认 true + autoRecognizeV2 一次性迁移。
+- 性能：RapidOCR 1.4.4 检测把短边放大到 736（limit_type=min），横向长条 141×1038 检测要 1 秒；三条标题带竖向拼接后约 0.3 秒。ONNX 每遇新尺寸首帧慢约 1 秒。
+- 验证：Nyx 公开截图 720p/1080p/1440p/4K 四档定位与识别正确（定位 10–53 ms）；反例不误判；ocr:test 22、vitest 180（新增 tests/card-badges.test.ts）、test:renderer/companions/history/live/overlay 全过。真实对局尚未验收（三种稀有度卡片、悬停高亮、刷新、多屏缩放）。
+- 顺带更正“关于”页的数据来源：海克斯全球样本来自 aramgg 官方数据 API 经本项目公共数据包分发（原文误写“经太农海克斯助手数据包分发”）。

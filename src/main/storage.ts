@@ -11,7 +11,8 @@ export const defaults: Settings = {
   mode: "rift",
   position: "ALL",
   tier: 255,
-  autoRecognize: false,
+  autoRecognize: true,
+  autoRecognizeV2: true,
   monitor: 0,
   overlay: true,
   companionWindows: true,
@@ -36,6 +37,10 @@ export class Storage {
         await readFile(join(this.directory, "settings.json"), "utf8"),
       );
       this.settings = validateSettings(value, defaults);
+      // 对局中自动标注海克斯改为默认开启。旧版保存的 false 只是当时的默认值，
+      // 新版首次启动时打开一次；之后用户关掉会被记住（标记随设置保存）。
+      if (value.autoRecognizeV2 !== true) this.settings.autoRecognize = true;
+      this.settings.autoRecognizeV2 = true;
       const page = value.managedRunePage;
       if (
         Number.isInteger(page?.id) &&

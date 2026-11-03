@@ -1,13 +1,16 @@
 """Read-only OCR validation for an explicitly supplied local gameplay reference.
 
 Not used by the packaged app. Images stay local and are never included in the repo.
+Runs the same pipeline as the app: locate the three cards, OCR the title bands,
+and report where the rating badges would be drawn.
 """
 import argparse
 import json
 import time
+from unittest.mock import patch
 import cv2
-from recognizer import get_engine
-from matching import choose_cards
+import recognizer
+from cards import detect_cards
 
 parser = argparse.ArgumentParser()
 parser.add_argument('image')
@@ -26,16 +29,21 @@ if args.allow_reference_names:
         if not any(row['name'] == name for row in dictionary):
             supplemented.append(name)
             dictionary.append({'id': -len(supplemented), 'name': name, 'rarity': 'reference'})
-get_engine()
-for height in (1080, 1440, 2160):
+recognizer.get_engine()
+for height in (720, 1080, 1440, 2160):
     width = round(image.shape[1] / image.shape[0] * height)
     scaled = cv2.resize(image, (width, height))
-    roi = scaled[int(height*.16):int(height*.16)+int(height*.68), int(width*.14):int(width*.14)+int(width*.72)]
+    recognizer.LAST_IMAGE = recognizer.LAST_RESULT = None
     started = time.perf_counter()
-    rows, _ = get_engine()(roi)
-    status, cards = choose_cards(rows, dictionary, roi.shape[1], roi.shape[0])
-    names = [card['name'] for card in cards]
+    regions = detect_cards(scaled)
+    if len(regions) != 3:
+        raise SystemExit(f'{height}p: located {len(regions)}/3 cards')
+    with patch.object(recognizer, 'emit'):
+        result = recognizer.scan_cards({'requestId': height, 'dictionary': dictionary}, scaled, regions, 0, {})
+    names = [card['name'] for card in result['cards']]
     elapsed = round(time.perf_counter() - started, 3)
-    print(json.dumps({'height': height, 'status': status, 'names': names, 'seconds': elapsed, 'referenceOnlyNames': supplemented}, ensure_ascii=False))
-    if status != 'recognized' or names != args.expected:
+    badges = [(slot['centerX'], slot['badgeY']) for slot in result['slots']]
+    print(json.dumps({'height': height, 'status': result['status'], 'names': names, 'badges': badges,
+                      'seconds': elapsed, 'referenceOnlyNames': supplemented}, ensure_ascii=False))
+    if result['status'] != 'recognized' or names != args.expected:
         raise SystemExit('Reference recognition did not match expected names')

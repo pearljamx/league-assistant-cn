@@ -1098,7 +1098,8 @@ i {
   color: var(--muted);
   margin-top: 14px;
 }
-body:has(.overlay-shell) {
+body:has(.overlay-shell),
+body:has(.overlay-cover) {
   background: transparent;
 }
 .overlay-shell .muted {

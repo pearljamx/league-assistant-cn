@@ -3,7 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Augment, Recognition } from "../shared/types";
+import type { Augment, Recognition, RecognitionSlot } from "../shared/types";
 import type { Client } from "./client";
 import type { Storage } from "./storage";
 import type { AramHexProvider } from "./providers/aramhex";
@@ -18,7 +18,39 @@ export const idleRecognition = (): Recognition => ({
   monitor: 0,
   updatedAt: new Date().toISOString(),
   gameWindow: undefined,
+  slots: [],
 });
+/** 只接受三张、坐标都在 0–1 内的卡片位置；任何一项异常都整体丢弃。 */
+export function parseSlots(raw: unknown): RecognitionSlot[] {
+  if (!Array.isArray(raw) || raw.length !== 3) return [];
+  const ratio = (value: unknown) =>
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1
+      ? value
+      : null;
+  const slots: RecognitionSlot[] = [];
+  for (const [index, item] of raw.entries()) {
+    const values = ["centerX", "top", "bottom", "width", "badgeY"].map((key) =>
+      ratio((item as any)?.[key]),
+    );
+    if (values.some((value) => value === null)) return [];
+    const [centerX, top, bottom, width, badgeY] = values as number[];
+    if (top >= bottom) return [];
+    const id = Number((item as any)?.id);
+    slots.push({
+      slot: index,
+      augmentId: Number.isInteger(id) && id > 0 ? id : null,
+      centerX,
+      top,
+      bottom,
+      width,
+      badgeY,
+    });
+  }
+  return slots;
+}
 export class RecognitionService extends EventEmitter {
   state = idleRecognition();
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -160,6 +192,7 @@ export class RecognitionService extends EventEmitter {
             message: "选项变化，正在重新识别",
             augmentIds: [],
             rawTexts: [],
+            slots: [],
             gameWindow: message.gameWindow,
           });
           return;
@@ -254,6 +287,8 @@ export class RecognitionService extends EventEmitter {
           : this.context,
         dictionary: this.dictionary.map(({ id, name }) => ({ id, name })),
         monitor: this.storage.getSettings().monitor,
+        // 手动识别（F6）在没定位到卡片时退回整块区域 OCR。
+        force,
       });
       if (epoch !== this.epoch) return this.state;
       const result = message.result;
@@ -271,6 +306,9 @@ export class RecognitionService extends EventEmitter {
             ? result.cards.map((card: any) => Number(card.id))
             : [],
         rawTexts: result.cards?.map((card: any) => String(card.text)) ?? [],
+        slots: ["recognized", "uncertain"].includes(result.status)
+          ? parseSlots(result.slots)
+          : [],
         captureId: message.requestId,
         monitor: result.monitor ?? 0,
         gameWindow: result.gameWindow,
@@ -290,6 +328,7 @@ export class RecognitionService extends EventEmitter {
             : "识别未完成，请重试或手动选择强化。",
         augmentIds: [],
         rawTexts: [],
+        slots: [],
       });
       return this.state;
     } finally {
