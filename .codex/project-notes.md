@@ -177,3 +177,8 @@ GitHub Windows CI 40789468031 已 success，冷环境完整执行 Node/Python �
 - 性能：RapidOCR 1.4.4 检测把短边放大到 736（limit_type=min），横向长条 141×1038 检测要 1 秒；三条标题带竖向拼接后约 0.3 秒。ONNX 每遇新尺寸首帧慢约 1 秒。
 - 验证：Nyx 公开截图 720p/1080p/1440p/4K 四档定位与识别正确（定位 10–53 ms）；反例不误判；ocr:test 22、vitest 180（新增 tests/card-badges.test.ts）、test:renderer/companions/history/live/overlay 全过。真实对局尚未验收（三种稀有度卡片、悬停高亮、刷新、多屏缩放）。
 - 顺带更正“关于”页的数据来源：海克斯全球样本来自 aramgg 官方数据 API 经本项目公共数据包分发（原文误写“经太农海克斯助手数据包分发”）。
+
+## 2026-11-08 v0.5.0 发布
+
+- 功能 313b4bd（Mini 窗秒数步进、自动匹配条件、回房后自动匹配修复）+ 0fd7240（游戏内卡片标注）；版本 7c6e3ba，User-Agent 改 PearljamHex/0.5。重新 ocr:build 后 build:win：Setup c28a5814…、Portable 9a590d3a…。
+- 标签 v0.5.0 → 7c6e3ba，gh release --prerelease 上传三附件；服务端 digest 与本地一致，公开 SHA256SUMS diff 一致；Windows CI 42494540185 success。真实客户端写操作与在线更新全流程仍待用户实测。
