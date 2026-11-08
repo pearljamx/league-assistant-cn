@@ -83,7 +83,7 @@ export function bytesRequest(
         rejectUnauthorized: !options.loopback,
         headers: {
           Accept: "application/json",
-          "User-Agent": "PearljamHex/0.4 (LeagueAssistantCN)",
+          "User-Agent": "PearljamHex/0.5 (LeagueAssistantCN)",
           ...(body
             ? {
                 "Content-Type": "application/json",
