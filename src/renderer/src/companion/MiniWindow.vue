@@ -7,8 +7,10 @@ import {
   Flame,
   Hexagon,
   MessageSquareText,
+  Minus,
   Pencil,
   Play,
+  Plus,
   Radio,
   RefreshCw,
   Search,
@@ -40,7 +42,7 @@ import {
   stats,
   view,
 } from "./useCompanion";
-import type { ChampionChoices } from "../../../shared/types";
+import type { ChampionChoices, Settings } from "../../../shared/types";
 
 const choices = ref<ChampionChoices>({
   championIds: [],
@@ -276,6 +278,26 @@ async function runMatch(action: "start" | "cancel" | "skip") {
     matchBusy.value = false;
   }
 }
+/** 弹窗内直接调整开关与秒数/人数：先本地更新以便连续点击，再由主进程校验保存。 */
+function adjust(patch: Partial<Settings>) {
+  settings.value = { ...settings.value, ...patch };
+  void save(patch);
+}
+const clampStep = (value: number, delta: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value + delta));
+const acceptSeconds = computed(() => Math.round(settings.value.acceptDelayMs / 1000));
+const matchSeconds = computed(() =>
+  Math.round((settings.value.autoMatchDelayMs ?? 3000) / 1000),
+);
+const minMembers = computed(() => settings.value.autoMatchMinMembers ?? 1);
+const stepAccept = (delta: number) =>
+  adjust({ acceptDelayMs: clampStep(acceptSeconds.value, delta, 1, 10) * 1000 });
+const stepMatch = (delta: number) =>
+  adjust({
+    autoMatchDelayMs: clampStep(matchSeconds.value, delta, 1, 30) * 1000,
+  });
+const stepMembers = (delta: number) =>
+  adjust({ autoMatchMinMembers: clampStep(minMembers.value, delta, 1, 5) });
 /** 狂暴切换只在大乱斗备选席可用；主进程负责循环与停止。 */
 const berserkBusy = ref(false);
 const canBerserk = computed(
@@ -518,6 +540,13 @@ onUnmounted(() => {
             {{ autoMatchIn }} 秒后自动开始匹配
             <button @click="runMatch('skip')">本次跳过</button>
           </p>
+          <p
+            v-else-if="state.autoMatchWait && state.phase === 'Lobby'"
+            class="match-hint wait"
+          >
+            自动匹配等待：{{ state.autoMatchWait }}
+            <button @click="runMatch('skip')">本次跳过</button>
+          </p>
           <p v-else-if="matchButton.hint" class="match-hint">
             {{ matchButton.hint }}
           </p>
@@ -530,41 +559,117 @@ onUnmounted(() => {
     </main>
 
     <section class="mini-ops" aria-label="自动操作">
-      <button
-        :class="['op-tile', { on: settings.autoAccept }]"
-        role="switch"
-        :aria-checked="settings.autoAccept"
-        aria-label="自动接受对局"
-        @click="save({ autoAccept: !settings.autoAccept })"
-      >
-        <span>自动接受</span
-        ><small>{{ settings.acceptDelayMs / 1000 }} 秒</small
-        ><i class="switch" :class="{ on: settings.autoAccept }"><span></span></i>
-      </button>
-      <button
-        :class="['op-tile', { on: settings.autoMatch }]"
-        role="switch"
-        :aria-checked="!!settings.autoMatch"
-        aria-label="自动匹配"
-        title="本人为房主时，进入大厅后延时开始匹配；手动取消后本轮不再自动排队"
-        @click="save({ autoMatch: !settings.autoMatch })"
-      >
-        <span>自动匹配</span
-        ><small>{{ (settings.autoMatchDelayMs ?? 3000) / 1000 }} 秒</small
-        ><i class="switch" :class="{ on: settings.autoMatch }"><span></span></i>
-      </button>
-      <button
-        :class="['op-tile', { on: settings.autoPlayAgain }]"
-        role="switch"
-        :aria-checked="!!settings.autoPlayAgain"
-        aria-label="结算后自动回到房间"
-        @click="save({ autoPlayAgain: !settings.autoPlayAgain })"
-      >
-        <span>自动回房</span><small>结算后</small
-        ><i class="switch" :class="{ on: settings.autoPlayAgain }"
-          ><span></span
-        ></i>
-      </button>
+      <div :class="['op-row', { on: settings.autoAccept }]">
+        <button
+          class="op-name"
+          role="switch"
+          :aria-checked="settings.autoAccept"
+          aria-label="自动接受对局"
+          @click="adjust({ autoAccept: !settings.autoAccept })"
+        >
+          <i class="switch" :class="{ on: settings.autoAccept }"><span></span></i
+          >自动接受
+        </button>
+        <span class="op-note">找到对局后</span>
+        <div class="stepper" aria-label="接受延迟">
+          <button
+            aria-label="接受延迟减少 1 秒"
+            :disabled="acceptSeconds <= 1"
+            @click="stepAccept(-1)"
+          >
+            <Minus :size="11" />
+          </button>
+          <b>{{ acceptSeconds }}<small>秒</small></b>
+          <button
+            aria-label="接受延迟增加 1 秒"
+            :disabled="acceptSeconds >= 10"
+            @click="stepAccept(1)"
+          >
+            <Plus :size="11" />
+          </button>
+        </div>
+      </div>
+      <div :class="['op-row', { on: settings.autoMatch }]">
+        <button
+          class="op-name"
+          role="switch"
+          :aria-checked="!!settings.autoMatch"
+          aria-label="自动匹配"
+          title="本人为房主、满足下方条件后倒计时开始匹配；手动取消后本轮不再自动排队"
+          @click="adjust({ autoMatch: !settings.autoMatch })"
+        >
+          <i class="switch" :class="{ on: settings.autoMatch }"><span></span></i
+          >自动匹配
+        </button>
+        <span class="op-note">条件满足后</span>
+        <div class="stepper" aria-label="匹配延迟">
+          <button
+            aria-label="匹配延迟减少 1 秒"
+            :disabled="matchSeconds <= 1"
+            @click="stepMatch(-1)"
+          >
+            <Minus :size="11" />
+          </button>
+          <b>{{ matchSeconds }}<small>秒</small></b>
+          <button
+            aria-label="匹配延迟增加 1 秒"
+            :disabled="matchSeconds >= 30"
+            @click="stepMatch(1)"
+          >
+            <Plus :size="11" />
+          </button>
+        </div>
+      </div>
+      <div v-if="settings.autoMatch" class="op-sub">
+        <span>房间至少</span>
+        <div class="stepper" aria-label="自动匹配最少人数">
+          <button
+            aria-label="最少人数减 1"
+            :disabled="minMembers <= 1"
+            @click="stepMembers(-1)"
+          >
+            <Minus :size="11" />
+          </button>
+          <b>{{ minMembers }}<small>人</small></b>
+          <button
+            aria-label="最少人数加 1"
+            :disabled="minMembers >= 5"
+            @click="stepMembers(1)"
+          >
+            <Plus :size="11" />
+          </button>
+        </div>
+        <label class="op-check">
+          <input
+            type="checkbox"
+            :checked="settings.autoMatchWaitInvites !== false"
+            @change="
+              adjust({
+                autoMatchWaitInvites: ($event.target as HTMLInputElement)
+                  .checked,
+              })
+            "
+          />等待被邀请者回应
+        </label>
+      </div>
+      <div :class="['op-row', { on: settings.autoPlayAgain }]">
+        <button
+          class="op-name"
+          role="switch"
+          :aria-checked="!!settings.autoPlayAgain"
+          aria-label="结算后自动回到房间"
+          @click="adjust({ autoPlayAgain: !settings.autoPlayAgain })"
+        >
+          <i class="switch" :class="{ on: settings.autoPlayAgain }"
+            ><span></span></i
+          >自动回房
+        </button>
+        <span class="op-note">{{
+          settings.autoPlayAgain && settings.autoMatch
+            ? "结算后回房并继续自动匹配"
+            : "结算后约 2 秒"
+        }}</span>
+      </div>
     </section>
     <footer class="rating-line" aria-label="海斗分">
       <template v-if="editing">

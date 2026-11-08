@@ -4,7 +4,12 @@ import { discover, type Credentials } from "./discovery";
 import { jsonRequest } from "./http";
 import { AppError, safeError } from "./errors";
 import { AutoAccept, PhaseAction } from "./automation";
-import { lobbyInfo, matchSearch, nextBerserkChampion } from "./matchmaking";
+import {
+  autoMatchBlocker,
+  lobbyInfo,
+  matchSearch,
+  nextBerserkChampion,
+} from "./matchmaking";
 import { autoSelectDefaults, planAutoSelect } from "./auto-select";
 import type {
   ConnectionState,
@@ -145,6 +150,8 @@ export class Client extends EventEmitter {
   private lobbyEpoch = 0;
   private lobbyEligible = false;
   private autoMatchWasOn = false;
+  /** 计时结束时房间条件已不满足则加一，使条件再次满足时重新倒计时。 */
+  private autoMatchRetry = 0;
   private endEpoch = 0;
   /** 狂暴切换：仅本次选人有效，离开选人、断线或换号即停止。 */
   private berserkTimer: ReturnType<typeof setInterval> | null = null;
@@ -163,8 +170,8 @@ export class Client extends EventEmitter {
     this.autoMatch = new PhaseAction(
       "Lobby",
       async () => {
-        if (!this.storage.getSettings().autoMatch || !this.tencentLobby())
-          return false;
+        const settings = this.storage.getSettings();
+        if (!settings.autoMatch || !this.tencentLobby()) return false;
         const epoch = this.lobbyEpoch;
         const owner = this.state.summoner?.puuid;
         const credentials = this.credentials;
@@ -177,8 +184,19 @@ export class Client extends EventEmitter {
           this.state.summoner?.puuid === owner &&
           this.credentials === credentials;
         if (!same()) return false;
-        if (!lobby?.canStart) {
-          report(`自动匹配未开始：${lobby?.reason ?? "无法读取房间"}`);
+        const blocker = autoMatchBlocker(
+          lobby,
+          settings.autoMatchMinMembers ?? 1,
+          settings.autoMatchWaitInvites !== false,
+        );
+        if (blocker) {
+          // 刚回到房间时客户端状态可能尚未就绪：不放弃本轮，等条件满足后重新倒计时。
+          this.state.lobby = lobby;
+          this.autoMatchRetry++;
+          queueMicrotask(() => {
+            this.updateAutomation();
+            this.publish();
+          });
           return false;
         }
         await this.request("/lol-lobby/v2/lobby/matchmaking/search", "POST");
@@ -348,6 +366,14 @@ export class Client extends EventEmitter {
           this.setPhase(event.data);
           void this.refreshSelection();
         }
+        if (event?.uri === "/lol-lobby/v2/lobby") {
+          if (this.state.phase !== "Lobby") return;
+          this.state.lobby =
+            event.eventType === "Delete" ? null : lobbyInfo(event.data);
+          this.updateAutomation();
+          this.publish();
+          return;
+        }
         if (event?.uri === "/lol-champ-select/v1/session") {
           this.selectionRevision++;
           if (
@@ -433,6 +459,7 @@ export class Client extends EventEmitter {
       if (phase === "PreEndOfGame") this.honorEpoch++;
       if (phase === "Lobby") {
         this.lobbyEpoch++;
+        void this.refreshLobby();
         // 用户取消匹配或拒绝/错过确认回到大厅时尊重其选择，不再自动排队。
         this.lobbyEligible = !["Matchmaking", "ReadyCheck"].includes(previous);
       }
@@ -479,13 +506,28 @@ export class Client extends EventEmitter {
     ) {
       this.lobbyEpoch++;
       this.lobbyEligible = true;
+      if (!this.state.lobby) void this.refreshLobby();
     }
     this.autoMatchWasOn = settings.autoMatch === true;
+    // 条件（可开始、人数下限、无未回应邀请）满足才倒计时；不满足时等待并在界面说明原因。
+    const wanted =
+      settings.autoMatch === true &&
+      this.lobbyEligible &&
+      connected &&
+      this.state.phase === "Lobby";
+    const blocker = wanted
+      ? autoMatchBlocker(
+          this.state.lobby,
+          settings.autoMatchMinMembers ?? 1,
+          settings.autoMatchWaitInvites !== false,
+        )
+      : null;
+    this.state.autoMatchWait = blocker;
     this.autoMatch.update(
-      settings.autoMatch === true && this.lobbyEligible,
+      wanted && !blocker,
       connected,
       this.state.phase,
-      `${identity}:${this.lobbyEpoch}`,
+      `${identity}:${this.lobbyEpoch}:${this.autoMatchRetry}`,
       settings.autoMatchDelayMs ?? 3000,
     );
     this.playAgain.update(
@@ -519,6 +561,24 @@ export class Client extends EventEmitter {
         recipientPuuid: "",
       });
     }
+  }
+  /** 进入大厅时立即读取房间，自动匹配不必等下一次轮询。 */
+  private lobbyReads = 0;
+  private async refreshLobby() {
+    const read = ++this.lobbyReads;
+    const credentials = this.credentials;
+    const lobby = lobbyInfo(
+      await this.request("/lol-lobby/v2/lobby").catch(() => null),
+    );
+    if (
+      read !== this.lobbyReads ||
+      this.state.phase !== "Lobby" ||
+      this.credentials !== credentials
+    )
+      return;
+    this.state.lobby = lobby;
+    this.updateAutomation();
+    this.publish();
   }
   /** 用户点击的匹配操作；只在本人为房主的大厅开始，取消只在匹配中。 */
   async matchmaking(action: "start" | "cancel" | "skip") {
@@ -1192,12 +1252,16 @@ export class Client extends EventEmitter {
         this.state.queueId = null;
         this.state.queueName = null;
       }
-      this.state.lobby =
+      const lobby =
         phase === "Lobby"
           ? lobbyInfo(
               await this.request("/lol-lobby/v2/lobby").catch(() => null),
             )
           : null;
+      if (this.state.phase === phase) {
+        this.state.lobby = lobby;
+        if (phase === "Lobby") this.updateAutomation();
+      }
       this.state.search =
         phase === "Matchmaking"
           ? matchSearch(

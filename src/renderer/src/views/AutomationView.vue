@@ -80,17 +80,16 @@ const toggles = [
             })
           "
         >
-          <option :value="1000">1 秒</option>
-          <option :value="2000">2 秒</option>
-          <option :value="3000">3 秒</option>
-          <option :value="5000">5 秒</option>
+          <option v-for="n in 10" :key="n" :value="n * 1000">
+            {{ n }} 秒
+          </option>
         </select>
       </div>
       <div class="setting-row">
         <div>
           <strong>自动匹配</strong>
           <p>
-            你是房主时，进入组队大厅后延时开始匹配。手动取消匹配或拒绝确认回到大厅后，本轮不再自动排队。默认关闭。
+            你是房主且满足下方条件时，倒计时后开始匹配；条件暂不满足会等待，结算自动回房后同样生效。手动取消匹配或拒绝确认回到大厅后，本轮不再自动排队。默认关闭。
           </p>
         </div>
         <button
@@ -107,7 +106,7 @@ const toggles = [
       <div class="setting-row">
         <div>
           <strong>匹配延迟</strong>
-          <p>倒计时期间可在 Mini 窗跳过本次。</p>
+          <p>条件满足后开始倒计时，期间可在 Mini 窗跳过本次。</p>
         </div>
         <select
           aria-label="匹配延迟"
@@ -120,12 +119,47 @@ const toggles = [
             })
           "
         >
-          <option :value="1000">1 秒</option>
-          <option :value="3000">3 秒</option>
-          <option :value="5000">5 秒</option>
-          <option :value="10000">10 秒</option>
-          <option :value="20000">20 秒</option>
+          <option v-for="n in 30" :key="n" :value="n * 1000">
+            {{ n }} 秒
+          </option>
         </select>
+      </div>
+      <div class="setting-row">
+        <div>
+          <strong>房间最少人数</strong>
+          <p>房间人数达到后才自动匹配，例如等朋友进齐再排。</p>
+        </div>
+        <select
+          aria-label="房间最少人数"
+          :value="settings.autoMatchMinMembers ?? 1"
+          @change="
+            save({
+              autoMatchMinMembers: Number(
+                ($event.target as HTMLSelectElement).value,
+              ),
+            })
+          "
+        >
+          <option v-for="n in 5" :key="n" :value="n">{{ n }} 人</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div>
+          <strong>等待被邀请者回应</strong>
+          <p>有未回应的邀请时暂不自动匹配。</p>
+        </div>
+        <button
+          class="switch"
+          :class="{ on: settings.autoMatchWaitInvites !== false }"
+          role="switch"
+          :aria-checked="settings.autoMatchWaitInvites !== false"
+          aria-label="等待被邀请者回应"
+          @click="
+            save({ autoMatchWaitInvites: settings.autoMatchWaitInvites === false })
+          "
+        >
+          <span></span>
+        </button>
       </div>
       <div class="setting-row">
         <div>

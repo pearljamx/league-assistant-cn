@@ -63,12 +63,16 @@ export interface ConnectionState {
   search?: MatchSearch | null;
   /** 自动匹配计划开始的时间（毫秒时间戳），未计划为空。 */
   autoMatchAt?: number | null;
+  /** 自动匹配已开启但条件未满足时的等待原因（如人数不足），否则为空。 */
+  autoMatchWait?: string | null;
   /** 选人狂暴切换是否进行中（仅本次选人有效）。 */
   berserk?: boolean;
 }
 export interface LobbyInfo {
   leader: boolean;
   members: number;
+  /** 已邀请但尚未回应的人数。 */
+  pendingInvites: number;
   custom: boolean;
   canStart: boolean;
   /** 不能开始时的原因。 */
@@ -408,6 +412,10 @@ export interface Settings {
   /** 本人为房主时，进入组队大厅后延时自动开始匹配。默认关闭。 */
   autoMatch?: boolean;
   autoMatchDelayMs?: number;
+  /** 自动匹配条件：房间至少几人（1–5，默认 1）。 */
+  autoMatchMinMembers?: number;
+  /** 自动匹配条件：有未回应的邀请时等待（默认开启）。 */
+  autoMatchWaitInvites?: boolean;
   /** 对局结算后自动回到房间。默认关闭。 */
   autoPlayAgain?: boolean;
   /** 结算点赞阶段自动跳过（不给任何人点赞）。默认关闭。 */

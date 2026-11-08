@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Client } from "../src/main/client";
 import { defaults, type Storage } from "../src/main/storage";
 import {
+  autoMatchBlocker,
   lobbyInfo,
   matchSearch,
   nextBerserkChampion,
@@ -33,6 +34,17 @@ describe("房间与排队解析", () => {
     ).toBe(false);
     expect(lobbyInfo(lobby({ canStartActivity: false }))?.canStart).toBe(false);
     expect(lobbyInfo(null)).toBeNull();
+    expect(
+      lobbyInfo(lobby({ invitations: [{ state: "Pending" }, { state: "Declined" }] }))
+        ?.pendingInvites,
+    ).toBe(1);
+  });
+  it("自动匹配条件：能开始、人数下限、未回应邀请", () => {
+    const info = lobbyInfo(lobby({ invitations: [{ state: "Pending" }] }))!;
+    expect(autoMatchBlocker(null)).toBe("正在读取房间");
+    expect(autoMatchBlocker(info, 3)).toBe("等待队友 2/3 人");
+    expect(autoMatchBlocker(info, 2)).toBe("等待 1 名被邀请者回应");
+    expect(autoMatchBlocker(info, 2, false)).toBeNull();
   });
   it("排队时间取整，惩罚时间来自 errors", () => {
     expect(
@@ -102,6 +114,7 @@ describe("自动匹配", () => {
     });
     phase("EndOfGame");
     phase("Lobby");
+    await vi.advanceTimersByTimeAsync(0);
     expect(client.state.autoMatchAt).toBeGreaterThan(Date.now());
     await vi.advanceTimersByTimeAsync(2900);
     expect(calls).not.toContain(SEARCH);
@@ -131,7 +144,7 @@ describe("自动匹配", () => {
     await client.matchmaking("skip");
     await vi.advanceTimersByTimeAsync(10000);
     expect(calls).not.toContain(SEARCH);
-    expect(client.state.autoMatchAt).toBeNull();
+    expect(client.state.autoMatchAt ?? null).toBeNull();
     phase("None");
     phase("Lobby");
     settings.autoMatch = false;
@@ -155,7 +168,66 @@ describe("自动匹配", () => {
     await vi.advanceTimersByTimeAsync(3100);
     expect(calls).toContain("GET /lol-lobby/v2/lobby");
     expect(calls).not.toContain(SEARCH);
-    expect(client.state.message).toContain("只有房主");
+    expect(client.state.autoMatchAt ?? null).toBeNull();
+    expect(client.state.autoMatchWait).toContain("只有房主");
+    client.stop();
+  });
+  it("刚回房时房间未就绪，就绪后重新倒计时并开始（回房后继续匹配）", async () => {
+    vi.useFakeTimers();
+    const { client, calls, phase } = makeClient({ autoMatch: true });
+    let ready = false;
+    client.request = vi.fn(async (path: string, method = "GET") => {
+      calls.push(`${method} ${path}`);
+      if (path === "/lol-lobby/v2/lobby")
+        return lobby({ canStartActivity: ready });
+    }) as typeof client.request;
+    phase("EndOfGame");
+    phase("Lobby");
+    // 读到房间前、以及房间暂不能开始时都只等待
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(calls).not.toContain(SEARCH);
+    expect(client.state.autoMatchWait).toContain("暂不能开始");
+    // 倒计时期间房间刚好变成不可开始：计时结束时复核失败也不放弃本轮
+    ready = true;
+    (client as any).refreshLobby();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.state.autoMatchAt).not.toBeNull();
+    ready = false;
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(calls).not.toContain(SEARCH);
+    ready = true;
+    await (client as any).refreshLobby();
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(calls.filter((call) => call === SEARCH)).toHaveLength(1);
+    client.stop();
+  });
+  it("人数不足或有未回应邀请时等待，满足后才倒计时", async () => {
+    vi.useFakeTimers();
+    const { client, calls, phase } = makeClient({
+      autoMatch: true,
+      autoMatchMinMembers: 3,
+    });
+    let raw: Record<string, unknown> = lobby({
+      members: [{}, {}],
+      invitations: [{ state: "Pending" }, { state: "Accepted" }],
+    });
+    client.request = vi.fn(async (path: string, method = "GET") => {
+      calls.push(`${method} ${path}`);
+      if (path === "/lol-lobby/v2/lobby") return raw;
+    }) as typeof client.request;
+    phase("None");
+    phase("Lobby");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(client.state.autoMatchWait).toBe("等待队友 2/3 人");
+    raw = { ...raw, members: [{}, {}, {}] };
+    await (client as any).refreshLobby();
+    expect(client.state.autoMatchWait).toBe("等待 1 名被邀请者回应");
+    expect(calls).not.toContain(SEARCH);
+    raw = { ...raw, invitations: [] };
+    await (client as any).refreshLobby();
+    expect(client.state.autoMatchWait).toBeNull();
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(calls.filter((call) => call === SEARCH)).toHaveLength(1);
     client.stop();
   });
   it("手动开始只在大厅，取消只在匹配中", async () => {

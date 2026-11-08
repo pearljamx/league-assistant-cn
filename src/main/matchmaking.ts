@@ -5,6 +5,9 @@ export function lobbyInfo(raw: any): LobbyInfo | null {
   if (!raw || typeof raw !== "object") return null;
   const local = raw.localMember ?? {};
   const members = Array.isArray(raw.members) ? raw.members.length : 0;
+  const pendingInvites = Array.isArray(raw.invitations)
+    ? raw.invitations.filter((item: any) => item?.state === "Pending").length
+    : 0;
   const custom = raw.gameConfig?.isCustom === true;
   const leader = local.isLeader === true;
   const queueId = Number(raw.gameConfig?.queueId);
@@ -16,10 +19,29 @@ export function lobbyInfo(raw: any): LobbyInfo | null {
   return {
     leader,
     members: Math.max(1, members),
+    pendingInvites,
     custom,
     canStart: reason === null,
     reason,
   };
+}
+
+/**
+ * 自动匹配的开始条件：能开始、人数达到下限、（可选）没有未回应的邀请。
+ * 满足返回 null，否则返回等待原因；房间未读到时按不满足处理。
+ */
+export function autoMatchBlocker(
+  lobby: LobbyInfo | null | undefined,
+  minMembers = 1,
+  waitInvites = true,
+): string | null {
+  if (!lobby) return "正在读取房间";
+  if (!lobby.canStart) return lobby.reason ?? "房间暂不能开始";
+  if (lobby.members < minMembers)
+    return `等待队友 ${lobby.members}/${minMembers} 人`;
+  if (waitInvites && lobby.pendingInvites > 0)
+    return `等待 ${lobby.pendingInvites} 名被邀请者回应`;
+  return null;
 }
 
 /** 从 /lol-matchmaking/v1/search 读出排队时间（秒）。 */

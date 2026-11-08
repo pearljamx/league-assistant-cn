@@ -260,6 +260,8 @@ else {
           acceptDelayMs: z.number().int().min(1000).max(10000).optional(),
           autoMatch: z.boolean().optional(),
           autoMatchDelayMs: z.number().int().min(1000).max(30000).optional(),
+          autoMatchMinMembers: z.number().int().min(1).max(5).optional(),
+          autoMatchWaitInvites: z.boolean().optional(),
           autoPlayAgain: z.boolean().optional(),
           autoSkipHonor: z.boolean().optional(),
           autoCheckUpdate: z.boolean().optional(),

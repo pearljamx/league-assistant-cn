@@ -21,6 +21,8 @@ export const defaults: Settings = {
   autoSelect: { ...autoSelectDefaults },
   autoMatch: false,
   autoMatchDelayMs: 3000,
+  autoMatchMinMembers: 1,
+  autoMatchWaitInvites: true,
   autoPlayAgain: false,
   autoSkipHonor: false,
   autoCheckUpdate: true,
@@ -112,6 +114,7 @@ export function validateSettings(
     "overlay",
     "companionWindows",
     "autoMatch",
+    "autoMatchWaitInvites",
     "autoPlayAgain",
     "autoSkipHonor",
     "autoCheckUpdate",
@@ -132,6 +135,14 @@ export function validateSettings(
     next.autoMatchDelayMs = Math.max(
       1000,
       Math.min(30000, Math.round(patch.autoMatchDelayMs)),
+    );
+  if (
+    typeof patch.autoMatchMinMembers === "number" &&
+    Number.isFinite(patch.autoMatchMinMembers)
+  )
+    next.autoMatchMinMembers = Math.max(
+      1,
+      Math.min(5, Math.round(patch.autoMatchMinMembers)),
     );
   if (["all", "casual", "mid", "high"].includes(patch.band ?? ""))
     next.band = patch.band!;
